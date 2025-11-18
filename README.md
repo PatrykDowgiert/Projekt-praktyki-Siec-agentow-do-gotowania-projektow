@@ -1,11 +1,3 @@
-Widzę, że parser GitHub/Mermaid jest bardzo wrażliwy na to, jak tekst jest wklejany (skleja ostatnią linię diagramu z następnym nagłówkiem). To frustrujące.
-
-Aby rozwiązać ten problem raz na zawsze i dać Ci działający plik, zamieniłem diagram Mermaid na profesjonalny Diagram ASCII. Jest on "niezniszczalny" – wyświetli się poprawnie w każdym edytorze tekstu, na GitHubie, GitLabie, a nawet w notatniku, i wygląda bardzo "hakersko", co pasuje do narzędzia CLI.
-
-Oto Twoje pancerne README.md. Skopiuj całość:
-
-Markdown
-
 # 🚀 AgileDev Agents: Autonomiczny Zespół Deweloperski AI
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
