@@ -1,21 +1,25 @@
 # 🚀 AgileDev Agents: Autonomiczny Zespół Deweloperski AI
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![LangChain](https://img.shields.io/badge/LangChain-0.1.0-green)
-![Architecture](https://img.shields.io/badge/Architecture-RAG%20%2B%20LangGraph-orange)
-![Status](https://img.shields.io/badge/Status-Prototype-yellow)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)
+![LangChain](https://img.shields.io/badge/LangChain-0.1.0-green?style=for-the-badge&logo=chainlink&logoColor=white)
+![Architecture](https://img.shields.io/badge/Architecture-RAG%20%2B%20LangGraph-orange?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Prototype-yellow?style=for-the-badge)
 
-**AgileDev Agents** to zaawansowany system orkiestracji agentów AI, który symuluje pracę rzeczywistego zespołu deweloperskiego w metodyce Agile. 
+**AgileDev Agents** to system orkiestracji agentów AI, który symuluje pracę rzeczywistego zespołu deweloperskiego (Scrum/Agile). 
 
-Projekt przyjmuje od użytkownika wymagania (jako tekst lub plik PDF), a następnie sieć agentów automatycznie dekomponuje zadania, planuje architekturę, pisze kod i przeprowadza testy. System wykorzystuje **Dynamiczny RAG**, aby "uczyć się" tworzonego kodu na bieżąco.
+Projekt przyjmuje wymagania (tekst lub PDF), a sieć agentów automatycznie:
+1. Analizuje zadania biznesowe.
+2. Projektuje rozwiązania techniczne w oparciu o istniejący kod (RAG).
+3. Pisze kod.
+4. Testuje i naprawia błędy przed zatwierdzeniem.
 
 ---
 
-## 🧠 Architektura i Przepływ Pracy
+## 🧠 Architektura Systemu
 
-System opiera się na cyklicznej współpracy czterech agentów oraz bazy wiedzy.
+System wykorzystuje **cykliczny graf agentów** (LangGraph) oraz **wspólną pamięć** (RAG), aby zachować spójność projektu.
 
-```text
+~~~text
 +-----------------+        +-------------------+
 |  Użytkownik     |------->|  Product Manager  |
 | (Input: PDF/Txt)|        | (Analiza/Backlog) |
@@ -42,132 +46,101 @@ System opiera się na cyklicznej współpracy czterech agentów oraz bazy wiedzy
                                      v
                            +-------------------+
                            |   Repozytorium    |
-                           |   (Git / Code)    |
+                           |   (Workspace)     |
                            +-------------------+
-👥 Role Agentów
-1. 🕵️ Product Manager (PM)
-Cel: Zrozumienie biznesu.
+~~~
 
-Zadania:
+---
 
-Analiza plików wejściowych (PDF, specyfikacje).
+## 👥 Role w Zespole AI
 
-Tworzenie Epików i dekompozycja na User Stories.
+### 🕵️ Product Manager (PM)
+* **Rola:** Zarządzanie produktem
+* **Zadania:** Analiza wymagań, tworzenie User Stories, priorytetyzacja backlogu.
 
-Zarządzanie Backlogiem Produktu.
+### 👷 Architekt Systemu (Tech Lead)
+* **Rola:** Nadzór techniczny
+* **Zadania:** Planowanie architektury, podział na pod-zadania.
+* **Supermoc:** Analiza istniejącego kodu przez RAG ("wiem, co już mamy w systemie").
 
-2. 👷 Architekt Systemu (Tech Lead)
-Cel: Spójność techniczna.
+### 👨‍💻 Programista (Coder)
+* **Rola:** Wykonawca
+* **Zadania:** Generowanie czystego kodu Python zgodnie z wytycznymi Architekta.
 
-Zadania:
+### 🐞 QA / Reviewer
+* **Rola:** Kontrola jakości
+* **Zadania:** Pisanie testów (`pytest`), analiza statyczna kodu, odrzucanie błędnych rozwiązań (Feedback Loop).
 
-Analiza User Stories pod kątem technicznym.
+---
 
-Kluczowe: Wykorzystanie RAG do przeszukiwania istniejącego kodu projektu ("Jakie mamy modele?", "Gdzie dodać endpoint?").
+## 📂 Struktura Projektu
 
-Tworzenie precyzyjnych instrukcji implementacyjnych dla programisty.
-
-3. 👨‍💻 Programista (Coder)
-Cel: Implementacja.
-
-Zadania:
-
-Pisanie kodu na podstawie specyfikacji od Architekta.
-
-Trzymanie się ściśle narzuconych konwencji i kontekstu.
-
-4. 🐞 QA / Reviewer
-Cel: Jakość i stabilność.
-
-Zadania:
-
-Generowanie testów jednostkowych.
-
-Analiza statyczna kodu (linting).
-
-Pętla zwrotna: Jeśli kod zawiera błędy, odsyła go do Programisty z logami błędów do poprawy.
-
-🛠️ Technologie
-Projekt zbudowany jest w oparciu o nowoczesny stack AI:
-
-Python 3.10+
-
-LangChain & LangGraph: Do zarządzania stanem i orkiestracji agentów.
-
-RAG (Retrieval-Augmented Generation):
-
-Vector Store: ChromaDB lub FAISS.
-
-Embeddings: OpenAI Embeddings.
-
-LLM: OpenAI GPT-4o (zalecane dla Architekta/Kodera) lub Anthropic Claude 3.5 Sonnet.
-
-Narzędzia: pypdf (ładowanie dokumentów), black/flake8 (analiza kodu).
-
-🚀 Instalacja i Uruchomienie
-1. Klonowanie repozytorium
-Bash
-
-git clone [https://github.com/twoj-nick/agile-dev-agents.git](https://github.com/twoj-nick/agile-dev-agents.git)
-cd agile-dev-agents
-2. Utworzenie środowiska wirtualnego
-Bash
-
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-3. Instalacja zależności
-Bash
-
-pip install -r requirements.txt
-4. Konfiguracja
-Utwórz plik .env w głównym katalogu i dodaj klucz API:
-
-Fragment kodu
-
-OPENAI_API_KEY=sk-proj-twoj-klucz-api...
-# Opcjonalnie dla lepszego debugowania:
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=ls-twoj-klucz...
-5. Użycie
-Aby rozpocząć pracę nad nowym projektem na podstawie specyfikacji PDF:
-
-Bash
-
-python main.py --input "docs/specyfikacja_sklepu.pdf" --project_name "SklepInternetowy"
-Lub tryb interaktywny:
-
-Bash
-
-python main.py --chat
-📂 Struktura Projektu
-Plaintext
-
+~~~text
 agile-dev-agents/
-├── agents/             # Logika poszczególnych agentów
+├── agents/             # Mózgi poszczególnych agentów
 │   ├── product_manager.py
 │   ├── architect.py
 │   ├── developer.py
 │   └── qa_engineer.py
-├── core/               # Konfiguracja RAG i LLM
-│   ├── rag_engine.py   # Indeksowanie i wyszukiwanie
-│   └── state.py        # Stan LangGraph
-├── input/              # Miejsce na pliki PDF/TXT użytkownika
-├── workspace/          # Tu agenci generują kod wynikowy
-├── main.py             # Punkt wejściowy aplikacji
-└── README.md
-🗺️ Roadmapa
-[ ] Bazowa implementacja 4 agentów w LangGraph.
+├── core/               # Rdzeń systemu
+│   ├── rag_engine.py   # Silnik RAG (ChromaDB + Embeddings)
+│   └── state.py        # Definicja stanu globalnego (State)
+├── input/              # Folder na dokumentację wejściową (PDF)
+├── workspace/          # Folder roboczy (tu powstaje kod wynikowy)
+├── main.py             # Punkt startowy aplikacji
+└── requirements.txt    # Zależności
+~~~
 
-[ ] System RAG indeksujący kod Pythona w czasie rzeczywistym.
+---
 
-[ ] Obsługa błędów i pętle naprawcze (Self-healing code).
+## 🚀 Instalacja i Uruchomienie
 
-[ ] Interfejs użytkownika w Streamlit.
+### 1. Klonowanie
+~~~bash
+git clone [https://github.com/twoj-nick/agile-dev-agents.git](https://github.com/twoj-nick/agile-dev-agents.git)
+cd agile-dev-agents
+~~~
 
-[ ] Integracja z Dockerem do bezpiecznego uruchamiania kodu.
+### 2. Środowisko wirtualne
+~~~bash
+# Windows
+python -m venv venv
+venv\Scripts\activate
 
-📄 Licencja
-Projekt udostępniony na licencji MIT.
+# Linux / MacOS
+python3 -m venv venv
+source venv/bin/activate
+~~~
+
+### 3. Instalacja zależności
+~~~bash
+pip install -r requirements.txt
+~~~
+
+### 4. Konfiguracja API
+Utwórz plik `.env` w głównym katalogu i wklej swój klucz OpenAI:
+~~~env
+OPENAI_API_KEY=sk-proj-twoj-klucz-api...
+~~~
+
+### 5. Uruchomienie
+Wrzuć plik z wymaganiami (np. `specyfikacja.pdf`) do folderu `input/` i uruchom:
+
+~~~bash
+python main.py
+~~~
+
+---
+
+## 🛠️ Stack Technologiczny
+
+* **Język:** Python 3.10+
+* **Orkiestracja:** LangChain + LangGraph
+* **Pamięć (RAG):** ChromaDB
+* **LLM:** OpenAI GPT-4o
+* **Narzędzia:** PyPDF, Black (formatter), Pytest
+
+---
+
+## 📄 Licencja
+MIT
