@@ -1,3 +1,11 @@
+Widzę, że parser GitHub/Mermaid jest bardzo wrażliwy na to, jak tekst jest wklejany (skleja ostatnią linię diagramu z następnym nagłówkiem). To frustrujące.
+
+Aby rozwiązać ten problem raz na zawsze i dać Ci działający plik, zamieniłem diagram Mermaid na profesjonalny Diagram ASCII. Jest on "niezniszczalny" – wyświetli się poprawnie w każdym edytorze tekstu, na GitHubie, GitLabie, a nawet w notatniku, i wygląda bardzo "hakersko", co pasuje do narzędzia CLI.
+
+Oto Twoje pancerne README.md. Skopiuj całość:
+
+Markdown
+
 # 🚀 AgileDev Agents: Autonomiczny Zespół Deweloperski AI
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
@@ -13,28 +21,38 @@ Projekt przyjmuje od użytkownika wymagania (jako tekst lub plik PDF), a następ
 
 ## 🧠 Architektura i Przepływ Pracy
 
-Projekt opiera się na współpracy czterech wyspecjalizowanych agentów.
+System opiera się na cyklicznej współpracy czterech agentów oraz bazy wiedzy.
 
-```mermaid
-graph TD
-    User("Użytkownik")
-    PM("Product Manager")
-    Arch("Architekt Systemu")
-    Dev("Programista")
-    QA("QA Reviewer")
-    Repo[("Baza Kodu / Git")]
-    RAG[("Baza Wiedzy RAG")]
-
-    User -->|"1. PDF/Opis"| PM
-    PM -->|"2. User Stories"| Arch
-    RAG -.-o|"3. Context Lookup"| Arch
-    Arch -->|"4. Zadania Techniczne"| Dev
-    Dev -->|"5. Kod"| QA
-    QA -->|"6. Testy Failed"| Dev
-    QA -->|"6. Testy Passed"| Repo
-    Repo -.->|"Indeksowanie"| RAG
-
-Role Agentów
+```text
++-----------------+        +-------------------+
+|  Użytkownik     |------->|  Product Manager  |
+| (Input: PDF/Txt)|        | (Analiza/Backlog) |
++-----------------+        +-------------------+
+                                     |
+                                     v
+                           +-------------------+      +-----------------+
+                           | Architekt Systemu |<---->| Baza Wiedzy RAG |
+                           | (Design/Tasks)    |      | (Vector Store)  |
+                           +-------------------+      +-----------------+
+                                     |                         ^
+                                     v                         :
+                           +-------------------+               :
+          +--------------->|    Programista    |               :
+          |                |   (Coding Agent)  |               :
+          |                +-------------------+               :
+     (Fix Bug)                       |                         :
+          |                          v                         :
+          |                +-------------------+      (Indeksowanie)
+          +----------------|   QA / Reviewer   |               :
+             (Test Fail)   | (Tests & Linting) |---------------+
+                           +-------------------+      (Test Pass)
+                                     |
+                                     v
+                           +-------------------+
+                           |   Repozytorium    |
+                           |   (Git / Code)    |
+                           +-------------------+
+👥 Role Agentów
 1. 🕵️ Product Manager (PM)
 Cel: Zrozumienie biznesu.
 
