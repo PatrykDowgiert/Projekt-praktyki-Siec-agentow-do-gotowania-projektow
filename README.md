@@ -17,31 +17,22 @@ Projekt opiera się na współpracy czterech wyspecjalizowanych agentów.
 
 ```mermaid
 graph TD
-    %% Węzły (Nodes)
-    User((Użytkownik))
-    PM[Product Manager]
-    Arch[Architekt Systemu]
-    Dev[Programista]
-    QA[QA Reviewer]
-    Repo[(Baza Kodu / Git)]
-    RAG[(Baza Wiedzy RAG)]
+    User("Użytkownik")
+    PM("Product Manager")
+    Arch("Architekt Systemu")
+    Dev("Programista")
+    QA("QA Reviewer")
+    Repo[("Baza Kodu / Git")]
+    RAG[("Baza Wiedzy RAG")]
 
-    %% Połączenia (Links)
-    User -->|1. PDF/Opis| PM
-    PM -->|2. User Stories| Arch
-    
-    %% Interakcja z RAG
-    RAG <.->|3. Context Lookup| Arch
-    
-    Arch -->|4. Zadania Techniczne| Dev
-    Dev -->|5. Kod| QA
-    
-    %% Pętle zwrotne
-    QA -->|6. Testy Failed| Dev
-    QA -->|6. Testy Passed| Repo
-    
-    %% Indeksowanie
-    Repo -.->|Indeksowanie| RAG
+    User -->|"1. PDF/Opis"| PM
+    PM -->|"2. User Stories"| Arch
+    RAG -.-o|"3. Context Lookup"| Arch
+    Arch -->|"4. Zadania Techniczne"| Dev
+    Dev -->|"5. Kod"| QA
+    QA -->|"6. Testy Failed"| Dev
+    QA -->|"6. Testy Passed"| Repo
+    Repo -.->|"Indeksowanie"| RAG
 👥 Role Agentów
 1. 🕵️ Product Manager (PM)
 Cel: Zrozumienie biznesu.
