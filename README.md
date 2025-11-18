@@ -33,6 +33,7 @@ graph TD
     QA -->|"6. Testy Failed"| Dev
     QA -->|"6. Testy Passed"| Repo
     Repo -.->|"Indeksowanie"| RAG
+
 👥 Role Agentów
 1. 🕵️ Product Manager (PM)
 Cel: Zrozumienie biznesu.
