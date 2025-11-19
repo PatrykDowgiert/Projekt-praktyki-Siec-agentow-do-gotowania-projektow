@@ -12,11 +12,15 @@ def should_continue_coding(state: AgentState):
     structure = state.get("file_structure", [])
     idx = state.get("current_file_index", 0)
     
+    # Ponieważ structure to teraz lista słowników lub napisów (zabezpieczenie),
+    # funkcja len() działa tak samo, więc logika się nie zmienia,
+    # ale warto upewnić się, że nic tu nie wybuchnie.
+    
     if idx < len(structure):
         return "continue"
     else:
         return "end"
-
+        
 # --- GŁÓWNA FUNKCJA GENERUJĄCA ---
 def run_project_agent(user_prompt, previous_state=None):
     """
@@ -80,3 +84,4 @@ def save_files_to_disk(project_name, files):
             file.write(f['content'])
             
     return base_path
+

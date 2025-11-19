@@ -3,36 +3,41 @@ from core.state import AgentState
 from config_factory import get_llm
 
 def pm_node(state: AgentState):
-    print("\n🕵️  [PM]: Analizuję wymagania (TRYB: Ścisły)...")
-    
     requirements = state.get("requirements", "")
+    # Sprawdzamy, czy mamy już jakieś pliki w projekcie
+    existing_files = state.get("project_files", [])
+    
+    mode = "MODYFIKACJA ISTNIEJĄCEGO PROJEKTU" if existing_files else "NOWY PROJEKT"
+    print(f"\n🕵️  [PM]: Analiza ({mode})...")
     
     llm = get_llm(model_role="pm")
     
-    system_prompt = """Jesteś Product Managerem, który ceni minimalizm (MVP - Minimum Viable Product).
+    # Tworzymy listę nazw plików, żeby PM wiedział co już mamy
+    file_names = [f['name'] for f in existing_files]
+    
+    system_prompt = f"""Jesteś Product Managerem.
+    
+    KONTEKST SYTUACJI:
+    Tryb pracy: {mode}
+    Istniejące pliki: {file_names if file_names else "Brak"}
     
     TWOJE ZADANIE:
-    Przeanalizuj wymagania użytkownika i stwórz plan zadań.
+    Stwórz plan działania na podstawie wymagań użytkownika.
     
-    ZASADY KRYTYCZNE:
-    1. TRZYMAJ SIĘ TYLKO TEGO, CO NAPISAŁ UŻYTKOWNIK.
-    2. ZAKAZ WYMYŚLANIA DODATKOWYCH FUNKCJI (Scope Creep).
-    3. Jeśli użytkownik prosi o grę konsolową -> NIE dodawaj Django/Flask/Web.
-    4. Jeśli użytkownik prosi o prosty skrypt -> NIE planuj architektury mikroserwisów.
-    5. Bądź konkretny i zwięzły.
+    ZASADY:
+    1. Jeśli to "MODYFIKACJA": Twoim celem jest opisanie, co zmienić w istniejącej logice. Nie wymyślaj koła na nowo.
+    2. Jeśli to "NOWY PROJEKT": Zaplanuj MVP od zera.
+    3. Unikaj Scope Creep (nie dodawaj funkcji, o które nikt nie prosił).
     """
     
     messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Wymagania użytkownika: {requirements}")
+        HumanMessage(content=f"Wymagania: {requirements}")
     ]
     
     response = llm.invoke(messages)
-    plan_content = response.content
-    
-    print(f"🕵️  [PM]: Plan gotowy.")
     
     return {
-        "plan": [plan_content],
+        "plan": [response.content],
         "messages": [response]
     }
