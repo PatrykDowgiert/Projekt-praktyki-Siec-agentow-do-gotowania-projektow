@@ -30,7 +30,7 @@ def get_llm(model_role="coder", temperature=0.2):
         model=model_name,
         temperature=temperature,
         # Wymuszamy timeout 120s i wyłączamy weryfikację SSL
-        client_args={
+        client_kwargs={
             "headers": HEADERS,
             "verify": False,  # <--- TO MUSI BYĆ FALSE (typ bool), A NIE STRING Z .ENV
             "timeout": 120.0
