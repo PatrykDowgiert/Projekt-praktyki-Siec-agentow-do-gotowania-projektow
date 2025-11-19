@@ -1,67 +1,54 @@
-import json
-import re
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from config_factory import get_llm
 
 def coder_node(state: AgentState):
-    print("\n👨‍💻 [Coder]: Generuję zawartość plików...")
-    
     file_structure = state.get("file_structure", [])
-    requirements = state.get("requirements", "")
+    idx = state.get("current_file_index", 0)
+    existing_files = state.get("project_files", [])
+    
+    # Zabezpieczenie przed wyjściem poza zakres
+    if idx >= len(file_structure):
+        return {}
+
+    current_filename = file_structure[idx]
+    print(f"\n👨‍💻 [Coder]: Piszę plik {idx+1}/{len(file_structure)}: {current_filename}...")
+    
+    # Budujemy kontekst (pokazujemy mu kod plików, które już stworzył)
+    context_files = ""
+    for f in existing_files:
+        context_files += f"\n--- PLIK: {f['name']} ---\n{f['content']}\n"
     
     llm = get_llm(model_role="coder")
     
-    # Sklejamy listę plików w jeden string
-    files_str = ", ".join(file_structure)
+    system_prompt = f"""Jesteś Ekspertem Python. Piszesz kod projektu plik po pliku.
     
-    system_prompt = """Jesteś Starszym Programistą Python.
-    Twoim zadaniem jest wygenerowanie kodu dla CAŁEGO projektu na raz.
+    TWOJE ZADANIE:
+    Napisz zawartość pliku: '{current_filename}'.
     
-    ZASADA KRYTYCZNA:
-    Twoja odpowiedź musi być POPRAWNYM kodem JSON w formacie:
-    {
-        "files": [
-            { "name": "nazwa_pliku.py", "content": "kod..." },
-            { "name": "requirements.txt", "content": "biblioteki..." }
-        ]
-    }
+    KONTEKST (Pliki już utworzone):
+    {context_files if context_files else "To pierwszy plik."}
     
-    1. Nie dodawaj żadnego tekstu przed ani po JSONie.
-    2. Upewnij się, że JSON jest poprawny (zamknij klamry).
-    3. W polach 'content' używaj znaków ucieczki dla nowych linii (\\n).
-    """
-    
-    user_msg = f"""
-    Projekt: {requirements}
-    Wymagana lista plików do utworzenia: {files_str}
-    
-    Wygeneruj JSON z zawartością tych plików.
+    WYMAGANIA:
+    1. Zwróć TYLKO kod tego jednego pliku.
+    2. Nie używaj znaczników markdown (```python), jeśli to możliwe.
+    3. Pamiętaj o importach z plików, które masz w kontekście.
     """
     
     messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=user_msg)
+        HumanMessage(content=f"Napisz kod dla: {current_filename}")
     ]
     
     response = llm.invoke(messages)
-    raw_content = response.content
+    code = response.content.replace("```python", "").replace("```", "").strip()
     
-    # --- PARSOWANIE JSON (Czyszczenie odpowiedzi LLM) ---
-    # Czasami LLM doda ```json na początku. Usuwamy to.
-    cleaned_json = raw_content.replace("```json", "").replace("```", "").strip()
-    
-    project_files = []
-    try:
-        data = json.loads(cleaned_json)
-        project_files = data.get("files", [])
-        print(f"👨‍💻 [Coder]: Wygenerowano {len(project_files)} plików.")
-    except json.JSONDecodeError as e:
-        print(f"❌ [Coder]: Błąd generowania JSONa: {e}")
-        print("Treść:", raw_content[:100]) # Podgląd błędu
-        # W wersji produkcyjnej tutaj powinna być pętla naprawcza "Self-Correction"
+    # Dodajemy nowy plik do listy
+    new_file = {"name": current_filename, "content": code}
+    updated_files = existing_files + [new_file]
     
     return {
-        "project_files": project_files,
+        "project_files": updated_files,       # Aktualizujemy listę plików
+        "current_file_index": idx + 1,        # Przesuwamy licznik dalej
         "messages": [response]
     }
