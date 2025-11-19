@@ -1,0 +1,55 @@
+# --- PYTHON ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Środowisko Wirtualne (Virtualenv) ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Zmienne Środowiskowe (BARDZO WAŻNE!) ---
+# Nigdy nie commituj kluczy API ani tokenów
+.env
+.env.local
+.env.*.local
+
+# --- Baza Wiedzy (RAG / ChromaDB) ---
+# Baza wektorowa jest ciężka i binarna - nie trzymamy jej w git
+chroma_db_store/
+chroma_db/
+
+# --- IDE i System ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# --- Pliki projektu Agile Agent ---
+# Ignorujemy wrzucone PDFy (mogą być poufne)
+input/*
+!input/.gitkeep
+
+# Ignorujemy wygenerowany kod (chyba że chcesz go trzymać w repo)
+# Zostawiamy sam folder, ale ignorujemy jego zawartość
+workspace/*
+!workspace/.gitkeep
