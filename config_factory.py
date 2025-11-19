@@ -44,7 +44,7 @@ def get_embeddings():
     embeddings = OllamaEmbeddings(
         base_url=BASE_URL,
         model=model_name,
-        client_args={
+        client_kwargs={
             "headers": HEADERS,
             "verify": False, # <--- TU TEŻ NA SZTYWNO
             "timeout": 120.0
