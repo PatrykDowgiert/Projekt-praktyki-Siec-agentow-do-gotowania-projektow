@@ -1,6 +1,44 @@
+import re
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from config_factory import get_llm
+
+def extract_code(text):
+    """
+    Wyciąga kod z bloków markdown ```python ... ```.
+    Jeśli nie ma bloków, próbuje zwrócić całość, ale czyści znane śmieci.
+    """
+    # 1. Szukamy bloku kodu w ```python ... ```
+    pattern = r"```python\s*(.*?)\s*```"
+    match = re.search(pattern, text, re.DOTALL)
+    
+    if match:
+        return match.group(1).strip()
+    
+    # 2. Jeśli nie ma 'python', szukamy samego ``` ... ```
+    pattern_generic = r"```\s*(.*?)\s*```"
+    match_generic = re.search(pattern_generic, text, re.DOTALL)
+    if match_generic:
+        return match_generic.group(1).strip()
+    
+    # 3. Fallback (Model nie dał ramek) - usuwamy typowe "gadanie"
+    # Usuwamy linie, które nie wyglądają jak kod (prosta heurystyka)
+    lines = text.split('\n')
+    clean_lines = []
+    started = False
+    for line in lines:
+        # Jeśli linia zaczyna się od import, def, class, from -> to na pewno kod
+        if line.strip().startswith(("import ", "from ", "def ", "class ", "@", "#")):
+            started = True
+        
+        # Jeśli jeszcze nie zaczęliśmy kodu, a linia to zwykły tekst -> pomijamy
+        if not started and not line.strip().startswith(("#", "print", "if")):
+            # Ryzykowne, ale wycina "Here is the code:"
+            continue
+            
+        clean_lines.append(line)
+        
+    return "\n".join(clean_lines).strip()
 
 def coder_node(state: AgentState):
     file_structure = state.get("file_structure", [])
@@ -10,9 +48,6 @@ def coder_node(state: AgentState):
     if idx >= len(file_structure):
         return {}
 
-    # Pobieramy zadanie (Qwen lepiej radzi sobie, jak dane są jasne)
-    # file_structure to u nas lista słowników [{'filename': '...', 'context_needed': [...]}]
-    # Ale musimy obsłużyć sytuację, gdyby Architekt zwrócił starą listę (samych stringów)
     task = file_structure[idx]
     
     if isinstance(task, dict):
@@ -20,18 +55,15 @@ def coder_node(state: AgentState):
         context_needed = task.get("context_needed", [])
     else:
         current_filename = str(task)
-        context_needed = [] # Fallback
+        context_needed = []
     
-    # --- SMART CONTEXT (Klucz do wydajności na Ollamie) ---
+    # --- SMART CONTEXT ---
     smart_context = ""
-    
-    # 1. Dodajemy pliki wymagane (zależności)
     for needed_file in context_needed:
         found = next((f for f in existing_files_data if f["name"] == needed_file), None)
         if found:
-            smart_context += f"\n# --- TREŚĆ PLIKU: {needed_file} ---\n{found['content']}\n"
+            smart_context += f"\n# --- PLIK: {needed_file} ---\n{found['content']}\n"
     
-    # 2. Sprawdzamy czy to edycja (czy plik już istnieje)
     old_file_content = None
     for f in existing_files_data:
         if f["name"] == current_filename:
@@ -47,41 +79,36 @@ def coder_node(state: AgentState):
     requirements = state.get("requirements", "")
     pm_plan = state.get("plan", [])[-1]
 
-    # --- PROMPT POD QWEN-CODER ---
-    # Qwen lubi konkrety. Nie bawimy się w diffy, bo Qwen jest szybki i lepiej mu idzie pisanie całości.
-    
     if mode == "EDYCJA":
         system_prompt = f"""Jesteś Ekspertem Python (Qwen Coder).
         
-        Twoim zadaniem jest zmodyfikować istniejący plik '{current_filename}'.
+        ZADANIE: Zmodyfikuj plik '{current_filename}'.
         
-        STARY KOD PLIKU:
+        STARY KOD:
         ```python
         {old_file_content}
         ```
         
-        ZALEŻNOŚCI (Inne pliki w projekcie):
+        ZALEŻNOŚCI:
         {smart_context}
         
-        INSTRUKCJA:
-        1. Przeanalizuj wymagania zmian.
-        2. Napisz KOMPLETNY, POPRAWIONY kod pliku '{current_filename}'.
-        3. Zwróć TYLKO kod (bez bloków markdown, jeśli to możliwe).
+        ZASADA ABSOLUTNA:
+        Twój output zostanie zapisany bezpośrednio do pliku .py.
+        NIE PISZ ŻADNEGO TEKSTU POZA KODEM.
+        Kod musi być wewnątrz ```python ... ```.
         """
         user_msg = f"Wymagania zmian: {requirements}\nPlan: {pm_plan}"
         
     else:
-        # Tryb tworzenia
-        system_prompt = f"""Jesteś Ekspertem Python (Qwen Coder).
-        Piszesz nowy plik: '{current_filename}'.
+        system_prompt = f"""Jesteś Ekspertem Python.
+        Tworzysz plik: '{current_filename}'.
         
-        KONTEKST (Zależności):
-        {smart_context if smart_context else "Brak (plik bazowy)."}
+        ZALEŻNOŚCI:
+        {smart_context if smart_context else "Brak."}
         
-        INSTRUKCJA:
-        1. Napisz profesjonalny kod dla pliku '{current_filename}'.
-        2. Zadbaj o poprawne importy (patrz na kontekst).
-        3. Zwróć TYLKO kod.
+        ZASADA ABSOLUTNA:
+        Zwróć kod wewnątrz ```python ... ```.
+        Nie dodawaj wstępu ani zakończenia.
         """
         user_msg = f"Wymagania: {requirements}\nPlan: {pm_plan}"
     
@@ -90,26 +117,16 @@ def coder_node(state: AgentState):
         HumanMessage(content=user_msg)
     ]
     
-    # Ollama czasem gada na początku, więc czyścimy wynik
     response = llm.invoke(messages)
-    new_code = response.content
     
-    # Czyścimy markdown (```python ... ```)
-    new_code = new_code.replace("```python", "").replace("```", "").strip()
+    # UŻYWAMY NOWEJ FUNKCJI CZYSZCZĄCEJ
+    clean_code = extract_code(response.content)
     
-    # Jeśli model dodał na początku np. "Here is the code:", spróbujmy to wyciąć
-    # (Prosta heurystyka: szukamy pierwszego importu lub def/class)
-    if not new_code.startswith("import") and not new_code.startswith("from") and len(new_code) > 0:
-         # Czasami Qwen pisze tekst przed kodem. Zostawiamy jak jest, bo trudno to idealnie wyciąć bez regexa,
-         # ale zazwyczaj Qwen Coder jest bardzo grzeczny.
-         pass
-
-    # Aktualizacja pamięci
     updated_project_files = [f for f in existing_files_data if f["name"] != current_filename]
-    updated_project_files.append({"name": current_filename, "content": new_code})
+    updated_project_files.append({"name": current_filename, "content": clean_code})
     
     return {
         "project_files": updated_project_files,
-        "current_file_index": idx + 1,
+        "current_file_index": idx + 1, # Przechodzimy do QA (jeśli dodasz) lub nast. pliku
         "messages": [response]
     }

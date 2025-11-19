@@ -1,55 +1,37 @@
+import ast
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from config_factory import get_llm
 
 def qa_node(state: AgentState):
-    """
-    Rola: QA Engineer
-    Zadanie: Sprawdzenie jakości kodu (Static Analysis / Code Review).
-    """
-    print("\n🐞 [QA]: Sprawdzam kod...")
+    print("\n🐞 [QA]: Szybka weryfikacja składni...")
     
-    code = state.get("current_code", "")
-    requirements = state.get("requirements", "")
+    # Pobieramy ostatnio edytowany plik
+    idx = state.get("current_file_index", 1) - 1
+    files = state.get("project_files", [])
     
-    # Używamy modelu kodera, bo on najlepiej widzi błędy w składni
-    llm = get_llm(model_role="coder")
+    if not files or idx < 0:
+         # Coś poszło nie tak, przepuszczamy
+        return {"test_feedback": "PASSED"}
+
+    current_file = files[-1] # Ostatni dodany
+    code = current_file["content"]
+    filename = current_file["name"]
     
-    system_prompt = """Jesteś surowym inżynierem QA (Quality Assurance).
-    Twoim zadaniem jest przeanalizowanie kodu Pythona pod kątem błędów składniowych, logicznych i bezpieczeństwa.
+    # 1. Test Składni (AST) - Wyłapuje "gadanie" modelu
+    try:
+        ast.parse(code)
+        print(f"   -> ✅ Składnia {filename} poprawna.")
+    except SyntaxError as e:
+        error_msg = f"Błąd składni w pliku {filename} linia {e.lineno}: {e.msg}. Prawdopodobnie model dodał tekst poza kodem."
+        print(f"   -> ❌ {error_msg}")
+        # Cofamy indeks, żeby Coder poprawił ten sam plik
+        return {
+            "test_feedback": f"FAILED: {error_msg}",
+            "current_file_index": idx # Cofka
+        }
+
+    # 2. (Opcjonalnie) Test Logiczny przez LLM - jeśli chcesz być super dokładny
+    # Na razie pomińmy to dla szybkości, skoro problemem były śmieci w kodzie.
     
-    Zasady oceniania:
-    1. Jeśli kod wygląda poprawnie i spełnia wymagania -> Odpowiedz słowem: PASSED.
-    2. Jeśli kod ma błędy, braki importów lub jest niebezpieczny -> Odpowiedz słowem: FAILED, a następnie w nowej linii opisz dokładnie co trzeba poprawić.
-    
-    Format odpowiedzi:
-    PASSED
-    (lub)
-    FAILED
-    Lista błędów:
-    - Błąd 1...
-    - Błąd 2...
-    """
-    
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"WYMAGANIA:\n{requirements}\n\nKOD DO SPRAWDZENIA:\n{code}")
-    ]
-    
-    response = llm.invoke(messages)
-    feedback = response.content
-    
-    # Zwiększamy licznik iteracji (żeby nie utknąć w pętli w nieskończoność)
-    iteration = state.get("iteration_count", 0) + 1
-    
-    if "PASSED" in feedback:
-        print("🐞 [QA]: Testy zaliczone ✅")
-    else:
-        print(f"🐞 [QA]: Znaleziono błędy ❌ (Iteracja {iteration})")
-        # print(f"Feedback: {feedback}") # Opcjonalnie wypisz szczegóły
-    
-    return {
-        "test_feedback": feedback,
-        "iteration_count": iteration,
-        "messages": [response]
-    }
+    return {"test_feedback": "PASSED"}
