@@ -3,37 +3,35 @@ from core.state import AgentState
 from config_factory import get_llm
 
 def pm_node(state: AgentState):
-    """
-    Rola: Product Manager
-    Zadanie: Analiza wymagań i stworzenie listy zadań (User Stories).
-    """
-    print("\n🕵️  [PM]: Analizuję wymagania...")
+    print("\n🕵️  [PM]: Analizuję wymagania (TRYB: Ścisły)...")
     
     requirements = state.get("requirements", "")
     
-    # Pobieramy model skonfigurowany jako 'pm' (np. llama3.3 lub qwen)
     llm = get_llm(model_role="pm")
     
-    system_prompt = """Jesteś doświadczonym Product Managerem w zespole Agile.
-    Twój cel: Przeanalizuj wymagania użytkownika i stwórz zwięzłą listę zadań (User Stories) niezbędnych do realizacji projektu.
+    system_prompt = """Jesteś Product Managerem, który ceni minimalizm (MVP - Minimum Viable Product).
     
-    Zasady:
-    1. Każde zadanie powinno być konkretne.
-    2. Nie pisz kodu, tylko opisz funkcjonalność.
-    3. Wynik zwróć jako punktowaną listę.
+    TWOJE ZADANIE:
+    Przeanalizuj wymagania użytkownika i stwórz plan zadań.
+    
+    ZASADY KRYTYCZNE:
+    1. TRZYMAJ SIĘ TYLKO TEGO, CO NAPISAŁ UŻYTKOWNIK.
+    2. ZAKAZ WYMYŚLANIA DODATKOWYCH FUNKCJI (Scope Creep).
+    3. Jeśli użytkownik prosi o grę konsolową -> NIE dodawaj Django/Flask/Web.
+    4. Jeśli użytkownik prosi o prosty skrypt -> NIE planuj architektury mikroserwisów.
+    5. Bądź konkretny i zwięzły.
     """
     
     messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Oto wymagania projektu:\n{requirements}")
+        HumanMessage(content=f"Wymagania użytkownika: {requirements}")
     ]
     
     response = llm.invoke(messages)
     plan_content = response.content
     
-    print(f"🕵️  [PM]: Stworzyłem plan działania (Backlog).")
+    print(f"🕵️  [PM]: Plan gotowy.")
     
-    # Aktualizujemy stan: zapisujemy plan i dodajemy wiadomość do historii
     return {
         "plan": [plan_content],
         "messages": [response]
