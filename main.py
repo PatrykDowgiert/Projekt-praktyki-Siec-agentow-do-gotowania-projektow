@@ -1,86 +1,102 @@
+# ==========================================
+# ☢️ OPCJA NUKLEARNA: GLOBALNE WYŁĄCZENIE SSL
+# ==========================================
+import ssl
+import os
+import warnings
+
+warnings.filterwarnings("ignore")
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+# ==========================================
+
 from langgraph.graph import StateGraph, END
 from core.state import AgentState
-
-# Importy agentów
 from agents.pm_agent import pm_node
 from agents.architect_agent import architect_node
 from agents.coder_agent import coder_node
-from agents.qa_agent import qa_node  # <--- NOWY AGENT
+# Na razie pomijamy QA dla uproszczenia generowania wielu plików, 
+# ale można go dodać później jako weryfikatora JSONa.
 
-# Funkcja decyzyjna (Router)
-def should_continue(state: AgentState):
-    feedback = state.get("test_feedback", "")
-    iteration = state.get("iteration_count", 0)
+def save_project_to_disk(project_name, files):
+    """Funkcja zapisująca wygenerowane pliki na dysk"""
+    base_path = os.path.join("workspace", project_name)
     
-    # Warunek 1: Jeśli testy przeszły -> KONIEC
-    if "PASSED" in feedback:
-        return "end"
+    if not os.path.exists(base_path):
+        os.makedirs(base_path)
+        
+    print(f"\n💾 Zapisuję projekt w: {base_path}")
     
-    # Warunek 2: Bezpiecznik - jeśli próbowaliśmy już 3 razy i dalej błędy -> KONIEC (poddajemy się)
-    if iteration > 3:
-        print("⚠️ [SYSTEM]: Osiągnięto limit poprawek. Kończę pracę.")
-        return "end"
-    
-    # Warunek 3: Jeśli błędy -> WRÓĆ DO PROGRAMISTY
-    return "retry"
+    for file_data in files:
+        file_name = file_data.get("name")
+        content = file_data.get("content")
+        
+        # Obsługa podkatalogów (np. src/main.py)
+        full_path = os.path.join(base_path, file_name)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(content)
+            print(f"   -> Utworzono: {file_name}")
 
-def run_agile_team():
-    # 1. Budowanie Grafu
+def run_interactive_mode():
+    # 1. Budowa grafu
     workflow = StateGraph(AgentState)
-
-    # Dodawanie węzłów
+    
     workflow.add_node("product_manager", pm_node)
     workflow.add_node("architect", architect_node)
     workflow.add_node("developer", coder_node)
-    workflow.add_node("qa_engineer", qa_node) # <--- Dodajemy węzeł QA
-
-    # Definiowanie przepływu (Edges)
+    
     workflow.set_entry_point("product_manager")
     workflow.add_edge("product_manager", "architect")
     workflow.add_edge("architect", "developer")
-    workflow.add_edge("developer", "qa_engineer") # Po kodowaniu idziemy do QA
+    workflow.add_edge("developer", END)
     
-    # ROZGAŁĘZIENIE WARUNKOWE (Conditional Edge)
-    workflow.add_conditional_edges(
-        "qa_engineer",          # Skąd wychodzimy?
-        should_continue,        # Jaka funkcja decyduje?
-        {                       # Mapa decyzji
-            "end": END,         # Jeśli funkcja zwróci "end" -> Koniec
-            "retry": "developer" # Jeśli "retry" -> Wróć do Programisty
-        }
-    )
-
     app = workflow.compile()
-
-    # 2. Uruchomienie
-    print("🚀 Uruchamiam Zespół Agile AI (z pętlą QA)...")
     
-    initial_input = {
-        # Zmieńmy wymaganie na trudniejsze, żeby zmusić ich do myślenia
-        "requirements": "Napisz klasę w Pythonie 'OllamaClient', która ma metody do listowania modeli i generowania tekstu. Musi używać biblioteki `requests` i obsługiwać błędy połączenia.",
-        "plan": [],
-        "current_code": "",
-        "test_feedback": "",
-        "messages": [],
-        "iteration_count": 0
-    }
-
-    try:
-        result = app.invoke(initial_input, {"recursion_limit": 20}) # Zwiększamy limit kroków grafu
-
-        print("\n🏁 --- WYNIK KOŃCOWY (po testach QA) ---")
-        print(result["current_code"])
-        
-        # Zapis
-        import os
-        if not os.path.exists("workspace"):
-            os.makedirs("workspace")
-        with open("workspace/wynik.py", "w", encoding="utf-8") as f:
-            f.write(result["current_code"])
-            print("\n💾 Zapisano w workspace/wynik.py")
+    print("\n🤖 --- AGILE DEV AGENTS (Project Generator) ---")
+    print("Wpisz opis projektu, który chcesz stworzyć (lub 'exit').")
+    
+    while True:
+        user_input = input("\n>>> Twój pomysł: ")
+        if user_input.lower() in ["exit", "quit"]:
+            break
             
-    except Exception as e:
-        print(f"\n❌ Błąd wykonania: {e}")
+        if not user_input.strip():
+            continue
+            
+        # Nazwa projektu do folderu (proste czyszczenie nazwy)
+        project_name = user_input.split()[0:3] # Pierwsze 3 słowa
+        project_name = "_".join(project_name).replace(" ", "_").lower()
+        
+        initial_state = {
+            "requirements": user_input,
+            "plan": [],
+            "file_structure": [],
+            "project_files": [],
+            "messages": []
+        }
+        
+        print(f"🚀 Rozpoczynam pracę nad: {project_name}...")
+        
+        try:
+            # Zwiększamy recursion_limit, bo generowanie wielu plików trwa
+            result = app.invoke(initial_state, {"recursion_limit": 50})
+            
+            files = result.get("project_files", [])
+            
+            if files:
+                save_project_to_disk(project_name, files)
+                print(f"\n✅ Gotowe! Sprawdź folder workspace/{project_name}")
+            else:
+                print("\n⚠️ Coś poszło nie tak - programista nie zwrócił plików.")
+                
+        except Exception as e:
+            print(f"\n❌ Błąd: {e}")
 
 if __name__ == "__main__":
-    run_agile_team()
+    run_interactive_mode()

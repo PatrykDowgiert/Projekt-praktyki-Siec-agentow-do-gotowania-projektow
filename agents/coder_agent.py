@@ -1,62 +1,67 @@
+import json
+import re
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from config_factory import get_llm
 
 def coder_node(state: AgentState):
-    """
-    Rola: Programista
-    """
-    print("\n👨‍💻 [Coder]: Piszę/Poprawiam kod...")
+    print("\n👨‍💻 [Coder]: Generuję zawartość plików...")
     
-    tech_plan = state.get("plan", [])[-1]
-    current_code = state.get("current_code", "")
-    feedback = state.get("test_feedback", "")
+    file_structure = state.get("file_structure", [])
+    requirements = state.get("requirements", "")
     
     llm = get_llm(model_role="coder")
     
-    # Sprawdzamy, czy to pierwsza wersja, czy poprawka
-    if feedback and "FAILED" in feedback:
-        print("   -> [Coder]: Otrzymałem błędy od QA. Naprawiam...")
-        prompt_context = f"""
-        To jest sesja naprawcza (Refactoring).
-        
-        Twój poprzedni kod:
-        {current_code}
-        
-        Błędy zgłoszone przez QA:
-        {feedback}
-        
-        Zadanie: Popraw powyższy kod, aby wyeliminować błędy. Zwróć CAŁY poprawiony kod.
-        """
-    else:
-        prompt_context = f"""
-        To jest nowa implementacja.
-        Wytyczne Architekta:
-        {tech_plan}
-        """
-
-    system_prompt = """Jesteś Starszym Programistą Python.
-    Twoim zadaniem jest dostarczenie działającego, czystego kodu.
+    # Sklejamy listę plików w jeden string
+    files_str = ", ".join(file_structure)
     
-    Zasady:
-    1. Pisz TYLKO kod (bez ```python na początku, jeśli to możliwe).
-    2. Kod musi być kompletny.
+    system_prompt = """Jesteś Starszym Programistą Python.
+    Twoim zadaniem jest wygenerowanie kodu dla CAŁEGO projektu na raz.
+    
+    ZASADA KRYTYCZNA:
+    Twoja odpowiedź musi być POPRAWNYM kodem JSON w formacie:
+    {
+        "files": [
+            { "name": "nazwa_pliku.py", "content": "kod..." },
+            { "name": "requirements.txt", "content": "biblioteki..." }
+        ]
+    }
+    
+    1. Nie dodawaj żadnego tekstu przed ani po JSONie.
+    2. Upewnij się, że JSON jest poprawny (zamknij klamry).
+    3. W polach 'content' używaj znaków ucieczki dla nowych linii (\\n).
+    """
+    
+    user_msg = f"""
+    Projekt: {requirements}
+    Wymagana lista plików do utworzenia: {files_str}
+    
+    Wygeneruj JSON z zawartością tych plików.
     """
     
     messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=prompt_context)
+        HumanMessage(content=user_msg)
     ]
     
     response = llm.invoke(messages)
-    code = response.content
+    raw_content = response.content
     
-    # Czasami modele dają tekst w markdown ```python ... ```. Usuńmy to dla czystości.
-    code = code.replace("```python", "").replace("```", "").strip()
+    # --- PARSOWANIE JSON (Czyszczenie odpowiedzi LLM) ---
+    # Czasami LLM doda ```json na początku. Usuwamy to.
+    cleaned_json = raw_content.replace("```json", "").replace("```", "").strip()
     
-    print("👨‍💻 [Coder]: Gotowe.")
+    project_files = []
+    try:
+        data = json.loads(cleaned_json)
+        project_files = data.get("files", [])
+        print(f"👨‍💻 [Coder]: Wygenerowano {len(project_files)} plików.")
+    except json.JSONDecodeError as e:
+        print(f"❌ [Coder]: Błąd generowania JSONa: {e}")
+        print("Treść:", raw_content[:100]) # Podgląd błędu
+        # W wersji produkcyjnej tutaj powinna być pętla naprawcza "Self-Correction"
     
     return {
-        "current_code": code,
+        "project_files": project_files,
         "messages": [response]
     }

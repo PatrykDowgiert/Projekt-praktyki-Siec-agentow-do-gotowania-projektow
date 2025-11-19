@@ -1,27 +1,12 @@
-from typing import List, TypedDict, Annotated
+from typing import List, TypedDict, Annotated, Dict, Any
 from langchain_core.messages import BaseMessage
 import operator
 
 class AgentState(TypedDict):
-    """
-    Struktura danych, która jest przekazywana między agentami.
-    To jest 'Pamięć Krótkotrwała' całego procesu.
-    """
-    # Oryginalne zapytanie użytkownika (lub treść PDF)
-    requirements: str
-    
-    # Lista User Stories / Zadań stworzona przez PM-a
-    plan: List[str]
-    
-    # Kod wygenerowany przez Programistę
-    current_code: str
-    
-    # Wynik testów od QA (np. "FAILED: SyntaxError...")
-    test_feedback: str
-    
-    # Licznik iteracji (żeby uniknąć pętli nieskończonej przy naprawianiu błędów)
-    iteration_count: int
-    
-    # Historia wiadomości (wymagane przez LangGraph do chatu)
-    # operator.add oznacza, że nowe wiadomości są dopisywane do listy, a nie nadpisywane
+    requirements: str           # Co użytkownik chce (Input)
+    plan: List[str]            # Plan PM-a
+    file_structure: List[str]  # Lista plików wymyślona przez Architekta
+    project_files: List[Dict[str, str]] # Gotowy kod: [{"name": "main.py", "content": "print('hi')"}]
+    test_feedback: str         # Feedback QA
+    iteration_count: int       # Licznik pętli
     messages: Annotated[List[BaseMessage], operator.add]
