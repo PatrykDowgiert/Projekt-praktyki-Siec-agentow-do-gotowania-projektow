@@ -1,6 +1,5 @@
 from langgraph.graph import StateGraph, END
 from core.state import AgentState
-from core.rag_engine import ProjectKnowledgeBase
 
 # Importy naszych agentów (węzłów)
 from agents.pm_agent import pm_node
@@ -8,11 +7,7 @@ from agents.architect_agent import architect_node
 from agents.coder_agent import coder_node
 
 def run_agile_team():
-    # 1. Opcjonalnie: Załaduj wiedzę do RAG (jeśli masz pliki)
-    # rag = ProjectKnowledgeBase()
-    # rag.ingest_document("input/dokumentacja_projektu.pdf")
-
-    # 2. Budowanie Grafu
+    # 1. Budowanie Grafu
     workflow = StateGraph(AgentState)
 
     # Dodawanie węzłów (Nodes)
@@ -30,11 +25,12 @@ def run_agile_team():
     # Kompilacja grafu
     app = workflow.compile()
 
-    # 3. Uruchomienie procesu
+    # 2. Uruchomienie procesu
     print("🚀 Uruchamiam Zespół Agile AI...")
     
+    # Przykładowe zadanie na start
     initial_input = {
-        "requirements": "Stwórz prosty skrypt w Pythonie, który łączy się z API Ollamy i listuje dostępne modele.",
+        "requirements": "Stwórz skrypt w Pythonie, który łączy się z API Ollamy i wypisuje listę dostępnych modeli w konsoli.",
         "plan": [],
         "current_code": "",
         "messages": [],
@@ -47,10 +43,14 @@ def run_agile_team():
     print("\n🏁 --- WYNIK KOŃCOWY ---")
     print(result["current_code"])
     
-    # Opcjonalnie: Zapisz wynik do pliku
+    # Zapis wyniku do pliku
+    import os
+    if not os.path.exists("workspace"):
+        os.makedirs("workspace")
+        
     with open("workspace/wynik.py", "w", encoding="utf-8") as f:
         f.write(result["current_code"])
-        print("\n💾 Zapisano kod w folderze workspace/")
+        print("\n💾 Zapisano kod w folderze workspace/wynik.py")
 
 if __name__ == "__main__":
     run_agile_team()
