@@ -1,57 +1,37 @@
-import re
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from config_factory import get_llm
 
-def apply_patches(original_code, response_content):
-    """
-    Funkcja magiczna: Szuka bloków SEARCH/REPLACE i aplikuje je na kod.
-    """
-    # Wzorzec szuka bloków:
-    # <<<<SEARCH
-    # ...
-    # ====
-    # ...
-    # >>>>
-    pattern = r"<<<<SEARCH\n(.*?)\n====\n(.*?)\n>>>>"
-    patches = re.findall(pattern, response_content, re.DOTALL)
-    
-    if not patches:
-        return None # Brak patchy, zakładamy że model zwrócił cały plik
-
-    new_code = original_code
-    for search_block, replace_block in patches:
-        # Usuwamy ewentualne białe znaki z początku/końca bloku dla pewności
-        if search_block in new_code:
-            new_code = new_code.replace(search_block, replace_block)
-            print("   -> 🔧 Zastosowano patch (zmiana fragmentu).")
-        else:
-            print("   -> ⚠️ OSTRZEŻENIE: Nie znaleziono fragmentu do podmienienia! (LLM pomylił spacje?)")
-            # Fallback: W prawdziwym systemie tutaj użylibyśmy algorytmu 'fuzzy match',
-            # ale teraz po prostu zwracamy stary kod + ostrzeżenie
-            
-    return new_code
-
 def coder_node(state: AgentState):
-    file_structure = state.get("file_structure", []) 
+    file_structure = state.get("file_structure", [])
     idx = state.get("current_file_index", 0)
     existing_files_data = state.get("project_files", [])
     
     if idx >= len(file_structure):
         return {}
 
-    current_task = file_structure[idx]
-    current_filename = current_task["filename"]
-    context_needed = current_task.get("context_needed", [])
+    # Pobieramy zadanie (Qwen lepiej radzi sobie, jak dane są jasne)
+    # file_structure to u nas lista słowników [{'filename': '...', 'context_needed': [...]}]
+    # Ale musimy obsłużyć sytuację, gdyby Architekt zwrócił starą listę (samych stringów)
+    task = file_structure[idx]
     
-    # Budujemy Smart Context
+    if isinstance(task, dict):
+        current_filename = task["filename"]
+        context_needed = task.get("context_needed", [])
+    else:
+        current_filename = str(task)
+        context_needed = [] # Fallback
+    
+    # --- SMART CONTEXT (Klucz do wydajności na Ollamie) ---
     smart_context = ""
+    
+    # 1. Dodajemy pliki wymagane (zależności)
     for needed_file in context_needed:
         found = next((f for f in existing_files_data if f["name"] == needed_file), None)
         if found:
-            smart_context += f"\n### PLIK: {needed_file} ###\n{found['content']}\n"
-            
-    # Sprawdzamy czy edytujemy
+            smart_context += f"\n# --- TREŚĆ PLIKU: {needed_file} ---\n{found['content']}\n"
+    
+    # 2. Sprawdzamy czy to edycja (czy plik już istnieje)
     old_file_content = None
     for f in existing_files_data:
         if f["name"] == current_filename:
@@ -60,45 +40,48 @@ def coder_node(state: AgentState):
             
     mode = "EDYCJA" if old_file_content else "TWORZENIE"
     
-    print(f"\n👨‍💻 [Coder]: {mode} pliku {idx+1}/{len(file_structure)}: {current_filename}")
-
+    print(f"\n👨‍💻 [Coder]: {mode} pliku: {current_filename}")
+    
     llm = get_llm(model_role="coder")
     
     requirements = state.get("requirements", "")
     pm_plan = state.get("plan", [])[-1]
 
+    # --- PROMPT POD QWEN-CODER ---
+    # Qwen lubi konkrety. Nie bawimy się w diffy, bo Qwen jest szybki i lepiej mu idzie pisanie całości.
+    
     if mode == "EDYCJA":
-        # --- PROMPT DO OPTYMALIZACJI (PATCHING) ---
-        system_prompt = f"""Jesteś Programistą Python. Edytujesz plik '{current_filename}'.
+        system_prompt = f"""Jesteś Ekspertem Python (Qwen Coder).
         
-        AKTUALNA TREŚĆ:
+        Twoim zadaniem jest zmodyfikować istniejący plik '{current_filename}'.
+        
+        STARY KOD PLIKU:
         ```python
         {old_file_content}
         ```
         
-        MASZ DWIE OPCJE EDYCJI:
+        ZALEŻNOŚCI (Inne pliki w projekcie):
+        {smart_context}
         
-        OPCJA 1 (Dla małych zmian - ZALECANA):
-        Użyj formatu SEARCH/REPLACE, aby zmienić tylko fragment.
-        <<<<SEARCH
-        (dokładny fragment starego kodu, który chcesz usunąć)
-        ====
-        (nowy kod, który ma się tam znaleźć)
-        >>>>
-        
-        OPCJA 2 (Dla dużych zmian):
-        Zwróć po prostu CAŁY nowy kod pliku (bez znaczników SEARCH/REPLACE).
-        
-        ZASADA:
-        Przy OPCJI 1 musisz skopiować blok SEARCH co do znaku (spacje, wcięcia), inaczej zmiana się nie uda!
+        INSTRUKCJA:
+        1. Przeanalizuj wymagania zmian.
+        2. Napisz KOMPLETNY, POPRAWIONY kod pliku '{current_filename}'.
+        3. Zwróć TYLKO kod (bez bloków markdown, jeśli to możliwe).
         """
-        user_msg = f"Zmień kod zgodnie z: {requirements}\nKontekst: {smart_context}"
+        user_msg = f"Wymagania zmian: {requirements}\nPlan: {pm_plan}"
         
     else:
-        # Tworzenie od zera - tu zawsze zwracamy cały plik
-        system_prompt = f"""Jesteś Programistą Python. Tworzysz nowy plik '{current_filename}'.
-        Kontekst: {smart_context}
-        Zwróć kompletny kod pliku.
+        # Tryb tworzenia
+        system_prompt = f"""Jesteś Ekspertem Python (Qwen Coder).
+        Piszesz nowy plik: '{current_filename}'.
+        
+        KONTEKST (Zależności):
+        {smart_context if smart_context else "Brak (plik bazowy)."}
+        
+        INSTRUKCJA:
+        1. Napisz profesjonalny kod dla pliku '{current_filename}'.
+        2. Zadbaj o poprawne importy (patrz na kontekst).
+        3. Zwróć TYLKO kod.
         """
         user_msg = f"Wymagania: {requirements}\nPlan: {pm_plan}"
     
@@ -107,32 +90,23 @@ def coder_node(state: AgentState):
         HumanMessage(content=user_msg)
     ]
     
+    # Ollama czasem gada na początku, więc czyścimy wynik
     response = llm.invoke(messages)
-    raw_response = response.content
+    new_code = response.content
     
-    final_code = ""
+    # Czyścimy markdown (```python ... ```)
+    new_code = new_code.replace("```python", "").replace("```", "").strip()
     
-    if mode == "EDYCJA":
-        # Próbujemy zaaplikować patche
-        patched_code = apply_patches(old_file_content, raw_response)
-        
-        if patched_code:
-            final_code = patched_code
-        else:
-            # Jeśli nie ma patchy, zakładamy, że model zwrócił cały plik (albo patchowanie się nie udało)
-            # Czyścimy markdown
-            final_code = raw_response.replace("```python", "").replace("```", "").strip()
-            if len(final_code) < 10 and len(old_file_content) > 50:
-                 # Zabezpieczenie: Jeśli model zwrócił coś b. krótkiego a nie był to patch,
-                 # to pewnie błąd. Zostawiamy stary kod.
-                 print("   -> ❌ Błąd: Model zwrócił za mało danych. Cofam zmiany.")
-                 final_code = old_file_content
-    else:
-        final_code = raw_response.replace("```python", "").replace("```", "").strip()
-    
+    # Jeśli model dodał na początku np. "Here is the code:", spróbujmy to wyciąć
+    # (Prosta heurystyka: szukamy pierwszego importu lub def/class)
+    if not new_code.startswith("import") and not new_code.startswith("from") and len(new_code) > 0:
+         # Czasami Qwen pisze tekst przed kodem. Zostawiamy jak jest, bo trudno to idealnie wyciąć bez regexa,
+         # ale zazwyczaj Qwen Coder jest bardzo grzeczny.
+         pass
+
     # Aktualizacja pamięci
     updated_project_files = [f for f in existing_files_data if f["name"] != current_filename]
-    updated_project_files.append({"name": current_filename, "content": final_code})
+    updated_project_files.append({"name": current_filename, "content": new_code})
     
     return {
         "project_files": updated_project_files,
