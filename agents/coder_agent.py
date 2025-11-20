@@ -4,33 +4,29 @@ from core.state import AgentState
 from config_factory import get_llm
 
 def extract_code(text):
-    """Wyciąga kod z ramek markdown."""
+    if not text: return ""
     pattern = r"```python\s*(.*?)\s*```"
     match = re.search(pattern, text, re.DOTALL)
     if match: return match.group(1).strip()
-    
-    match_generic = re.search(r"```\s*(.*?)\s*```", text, re.DOTALL)
-    if match_generic: return match_generic.group(1).strip()
-    
-    # Fallback: zwracamy całość, ale usuwamy linie "Here is code:"
-    lines = text.split('\n')
-    clean = [l for l in lines if not l.lower().startswith(("here", "sure", "below"))]
-    return "\n".join(clean).strip()
+    match_gen = re.search(r"```\s*(.*?)\s*```", text, re.DOTALL)
+    if match_gen: return match_gen.group(1).strip()
+    return text
 
 def coder_node(state: AgentState):
     file_structure = state.get("file_structure", [])
     idx = state.get("current_file_index", 0)
     existing_files_data = state.get("project_files", [])
     
+    # Zabezpieczenie listy plików (usuwamy None)
+    if existing_files_data is None: existing_files_data = []
+    existing_files_data = [f for f in existing_files_data if f is not None]
+    
     if not file_structure or idx >= len(file_structure):
-        return {} # Koniec pracy
+        return {}
 
     task = file_structure[idx]
-    
-    # --- ZABEZPIECZENIE PRZED BŁĘDEM 'NoneType' ---
-    if task is None:
-        print(f"⚠️ [Coder]: Puste zadanie pod indeksem {idx}. Pomijam.")
-        return {"current_file_index": idx + 1} # Idziemy dalej mimo błędu
+    if not task:
+        return {"current_file_index": idx + 1}
 
     if isinstance(task, dict):
         current_filename = task.get("filename", "unknown.py")
@@ -38,57 +34,46 @@ def coder_node(state: AgentState):
     else:
         current_filename = str(task)
         context_needed = []
-    
-    # --- Reszta logiki bez zmian (Smart Context) ---
+        
+    # SMART CONTEXT - Tutaj był potencjalny błąd, teraz naprawiony
     smart_context = ""
     for needed_file in context_needed:
-        found = next((f for f in existing_files_data if f["name"] == needed_file), None)
+        # Szukamy pliku, ale sprawdzamy czy f nie jest None
+        found = next((f for f in existing_files_data if f and f.get("name") == needed_file), None)
         if found:
-            smart_context += f"\n# --- PLIK: {needed_file} ---\n{found['content']}\n"
+            content = found.get("content", "")
+            smart_context += f"\n# --- PLIK: {needed_file} ---\n{content}\n"
     
     old_file_content = None
     for f in existing_files_data:
-        if f["name"] == current_filename:
-            old_file_content = f["content"]
+        if f.get("name") == current_filename:
+            old_file_content = f.get("content")
             break
             
     mode = "EDYCJA" if old_file_content else "TWORZENIE"
     print(f"\n👨‍💻 [Coder]: {mode} pliku: {current_filename}")
     
     llm = get_llm(model_role="coder")
-    requirements = state.get("requirements", "")
-    pm_plan = state.get("plan", [])
-    pm_plan_str = pm_plan[-1] if pm_plan else ""
+    
+    sys_prompt = f"Jesteś programistą Python. {'Edytujesz' if mode=='EDYCJA' else 'Tworzysz'} plik '{current_filename}'."
+    user_msg = f"Wymagania: {state.get('requirements','')}\nKod w ```python ... ```."
+    
+    if mode == "EDYCJA": user_msg += f"\nSTARY KOD:\n{old_file_content}"
+    user_msg += f"\nKONTEKST:\n{smart_context}"
+    
+    try:
+        resp = llm.invoke([SystemMessage(content=sys_prompt), HumanMessage(content=user_msg)])
+        code = extract_code(resp.content)
+    except Exception as e:
+        print(f"Błąd LLM: {e}")
+        code = "# Error generating code"
 
-    if mode == "EDYCJA":
-        system_prompt = f"""Jesteś Ekspertem Python. Zmodyfikuj plik '{current_filename}'.
-        STARY KOD:
-        ```python
-        {old_file_content}
-        ```
-        ZALEŻNOŚCI:
-        {smart_context}
-        Zwróć TYLKO kod wewnątrz ```python ... ```.
-        """
-        user_msg = f"Wymagania: {requirements}\nPlan: {pm_plan_str}"
-    else:
-        system_prompt = f"""Jesteś Ekspertem Python. Napisz plik '{current_filename}'.
-        ZALEŻNOŚCI:
-        {smart_context}
-        Zwróć TYLKO kod wewnątrz ```python ... ```.
-        """
-        user_msg = f"Wymagania: {requirements}\nPlan: {pm_plan_str}"
-    
-    messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)]
-    response = llm.invoke(messages)
-    
-    clean_code = extract_code(response.content)
-    
-    updated_project_files = [f for f in existing_files_data if f["name"] != current_filename]
-    updated_project_files.append({"name": current_filename, "content": clean_code})
+    # Aktualizacja
+    updated = [f for f in existing_files_data if f.get("name") != current_filename]
+    updated.append({"name": current_filename, "content": code})
     
     return {
-        "project_files": updated_project_files,
+        "project_files": updated,
         "current_file_index": idx + 1,
-        "messages": [response]
+        "messages": [resp] if 'resp' in locals() else []
     }

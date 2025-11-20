@@ -4,19 +4,8 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from config_factory import get_llm
 
-def extract_json(text):
-    """Wyciąga JSON z tekstu, nawet jak model doda komentarze."""
-    try:
-        # 1. Szukamy bloku w klamrach [ ... ]
-        match = re.search(r'\[.*\]', text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        return json.loads(text)
-    except:
-        return None
-
 def architect_node(state: AgentState):
-    print("\n👷 [Architekt]: Analizuję zależności (Safe Mode)...")
+    print("\n👷 [Architekt]: Analizuję zależności (BULLETPROOF MODE)...")
     
     requirements = state.get("requirements", "")
     plan = state.get("plan", [])
@@ -28,16 +17,12 @@ def architect_node(state: AgentState):
     
     system_prompt = f"""Jesteś Architektem.
     ZADANIE: Zaprojektuj strukturę plików.
-    
     Istniejące pliki: {existing_names}
     
-    WYMAGANY FORMAT (Lista JSON):
+    Zwróć CZYSTY JSON w formacie:
     [
-      {{ "filename": "main.py", "context_needed": [] }},
-      {{ "filename": "utils.py", "context_needed": ["main.py"] }}
+      {{ "filename": "main.py", "context_needed": [] }}
     ]
-    
-    ZASADA: Zwróć SAM JSON. Bez gadania.
     """
     
     messages = [
@@ -45,27 +30,44 @@ def architect_node(state: AgentState):
         HumanMessage(content=f"Wymagania: {requirements}\nPlan: {plan_str}")
     ]
     
-    response = llm.invoke(messages)
-    content = response.content.strip()
-    
-    # --- BEZPIECZNE PARSOWANIE ---
-    structure_json = extract_json(content)
-    
-    if not structure_json:
-        print("⚠️ [Architekt]: Błąd JSON. Włączam tryb awaryjny (Fallback).")
-        # Tryb awaryjny: szukamy linii wyglądających jak pliki
-        lines = [l.strip() for l in content.split('\n') if "." in l and len(l.split()) == 1]
-        # Tworzymy strukturę ręcznie
-        structure_json = [{"filename": f, "context_needed": []} for f in lines]
-        
-    # Ostateczne zabezpieczenie przed None
-    if not structure_json:
-        structure_json = []
+    try:
+        response = llm.invoke(messages)
+        content = response.content
+    except Exception as e:
+        print(f"⚠️ [Architekt]: Błąd LLM: {e}")
+        content = ""
 
-    print(f"👷 [Architekt]: Zaplanowano {len(structure_json)} plików.")
+    # --- LOGIKA AWARYJNA (FALLBACK) ---
+    structure_json = []
+    
+    # 1. Próba Regex
+    match = re.search(r"\[.*\]", content, re.DOTALL)
+    if match:
+        try:
+            structure_json = json.loads(match.group(0))
+        except:
+            pass
+
+    # 2. Jeśli pusto -> Spadochron (Hardcoded Fallback)
+    if not structure_json or not isinstance(structure_json, list):
+        print("⚠️ [Architekt]: Nie udało się sparsować JSON. Włączam tryb awaryjny.")
+        # Tworzymy chociaż jeden plik, żeby proces poszedł dalej
+        structure_json = [{"filename": "main.py", "context_needed": []}]
+
+    # 3. FILTROWANIE NULLI (To naprawia Twój błąd!)
+    # Usuwamy z listy wszystko, co nie jest słownikiem
+    safe_structure = []
+    for item in structure_json:
+        if isinstance(item, dict) and "filename" in item:
+            safe_structure.append(item)
+        elif isinstance(item, str):
+            # Naprawiamy, jeśli model zwrócił listę stringów zamiast obiektów
+            safe_structure.append({"filename": item, "context_needed": []})
+            
+    print(f"👷 [Architekt]: Zaplanowano {len(safe_structure)} plików.")
 
     return {
-        "file_structure": structure_json,
+        "file_structure": safe_structure,
         "current_file_index": 0, 
-        "messages": [response]
+        "messages": [response] if 'response' in locals() else []
     }
