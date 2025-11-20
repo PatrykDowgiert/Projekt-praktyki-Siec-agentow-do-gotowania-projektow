@@ -4,60 +4,42 @@ from core.state import AgentState
 from config_factory import get_llm
 
 def extract_code(text):
-    """
-    Wyciąga kod z bloków markdown ```python ... ```.
-    Jeśli nie ma bloków, próbuje zwrócić całość, ale czyści znane śmieci.
-    """
-    # 1. Szukamy bloku kodu w ```python ... ```
+    """Wyciąga kod z ramek markdown."""
     pattern = r"```python\s*(.*?)\s*```"
     match = re.search(pattern, text, re.DOTALL)
+    if match: return match.group(1).strip()
     
-    if match:
-        return match.group(1).strip()
+    match_generic = re.search(r"```\s*(.*?)\s*```", text, re.DOTALL)
+    if match_generic: return match_generic.group(1).strip()
     
-    # 2. Jeśli nie ma 'python', szukamy samego ``` ... ```
-    pattern_generic = r"```\s*(.*?)\s*```"
-    match_generic = re.search(pattern_generic, text, re.DOTALL)
-    if match_generic:
-        return match_generic.group(1).strip()
-    
-    # 3. Fallback (Model nie dał ramek) - usuwamy typowe "gadanie"
-    # Usuwamy linie, które nie wyglądają jak kod (prosta heurystyka)
+    # Fallback: zwracamy całość, ale usuwamy linie "Here is code:"
     lines = text.split('\n')
-    clean_lines = []
-    started = False
-    for line in lines:
-        # Jeśli linia zaczyna się od import, def, class, from -> to na pewno kod
-        if line.strip().startswith(("import ", "from ", "def ", "class ", "@", "#")):
-            started = True
-        
-        # Jeśli jeszcze nie zaczęliśmy kodu, a linia to zwykły tekst -> pomijamy
-        if not started and not line.strip().startswith(("#", "print", "if")):
-            # Ryzykowne, ale wycina "Here is the code:"
-            continue
-            
-        clean_lines.append(line)
-        
-    return "\n".join(clean_lines).strip()
+    clean = [l for l in lines if not l.lower().startswith(("here", "sure", "below"))]
+    return "\n".join(clean).strip()
 
 def coder_node(state: AgentState):
     file_structure = state.get("file_structure", [])
     idx = state.get("current_file_index", 0)
     existing_files_data = state.get("project_files", [])
     
-    if idx >= len(file_structure):
-        return {}
+    if not file_structure or idx >= len(file_structure):
+        return {} # Koniec pracy
 
     task = file_structure[idx]
     
+    # --- ZABEZPIECZENIE PRZED BŁĘDEM 'NoneType' ---
+    if task is None:
+        print(f"⚠️ [Coder]: Puste zadanie pod indeksem {idx}. Pomijam.")
+        return {"current_file_index": idx + 1} # Idziemy dalej mimo błędu
+
     if isinstance(task, dict):
-        current_filename = task["filename"]
+        current_filename = task.get("filename", "unknown.py")
         context_needed = task.get("context_needed", [])
     else:
         current_filename = str(task)
         context_needed = []
     
-    # --- SMART CONTEXT ---
+    # --- Reszta logiki bez zmian (Smart Context) ---
     smart_context = ""
     for needed_file in context_needed:
         found = next((f for f in existing_files_data if f["name"] == needed_file), None)
@@ -71,55 +53,35 @@ def coder_node(state: AgentState):
             break
             
     mode = "EDYCJA" if old_file_content else "TWORZENIE"
-    
     print(f"\n👨‍💻 [Coder]: {mode} pliku: {current_filename}")
     
     llm = get_llm(model_role="coder")
-    
     requirements = state.get("requirements", "")
-    pm_plan = state.get("plan", [])[-1]
+    pm_plan = state.get("plan", [])
+    pm_plan_str = pm_plan[-1] if pm_plan else ""
 
     if mode == "EDYCJA":
-        system_prompt = f"""Jesteś Ekspertem Python (Qwen Coder).
-        
-        ZADANIE: Zmodyfikuj plik '{current_filename}'.
-        
+        system_prompt = f"""Jesteś Ekspertem Python. Zmodyfikuj plik '{current_filename}'.
         STARY KOD:
         ```python
         {old_file_content}
         ```
-        
         ZALEŻNOŚCI:
         {smart_context}
-        
-        ZASADA ABSOLUTNA:
-        Twój output zostanie zapisany bezpośrednio do pliku .py.
-        NIE PISZ ŻADNEGO TEKSTU POZA KODEM.
-        Kod musi być wewnątrz ```python ... ```.
+        Zwróć TYLKO kod wewnątrz ```python ... ```.
         """
-        user_msg = f"Wymagania zmian: {requirements}\nPlan: {pm_plan}"
-        
+        user_msg = f"Wymagania: {requirements}\nPlan: {pm_plan_str}"
     else:
-        system_prompt = f"""Jesteś Ekspertem Python.
-        Tworzysz plik: '{current_filename}'.
-        
+        system_prompt = f"""Jesteś Ekspertem Python. Napisz plik '{current_filename}'.
         ZALEŻNOŚCI:
-        {smart_context if smart_context else "Brak."}
-        
-        ZASADA ABSOLUTNA:
-        Zwróć kod wewnątrz ```python ... ```.
-        Nie dodawaj wstępu ani zakończenia.
+        {smart_context}
+        Zwróć TYLKO kod wewnątrz ```python ... ```.
         """
-        user_msg = f"Wymagania: {requirements}\nPlan: {pm_plan}"
+        user_msg = f"Wymagania: {requirements}\nPlan: {pm_plan_str}"
     
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_msg)
-    ]
-    
+    messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)]
     response = llm.invoke(messages)
     
-    # UŻYWAMY NOWEJ FUNKCJI CZYSZCZĄCEJ
     clean_code = extract_code(response.content)
     
     updated_project_files = [f for f in existing_files_data if f["name"] != current_filename]
@@ -127,6 +89,6 @@ def coder_node(state: AgentState):
     
     return {
         "project_files": updated_project_files,
-        "current_file_index": idx + 1, # Przechodzimy do QA (jeśli dodasz) lub nast. pliku
+        "current_file_index": idx + 1,
         "messages": [response]
     }
