@@ -101,6 +101,7 @@ def run_project_agent(user_prompt, previous_state=None):
         if "project_files" in initial_state and initial_state["project_files"]:
             initial_state["project_files"] = [f for f in initial_state["project_files"] if f is not None]
     else:
+        # Nowy projekt
         initial_state = {
             "requirements": user_prompt,
             "plan": [],
@@ -108,10 +109,12 @@ def run_project_agent(user_prompt, previous_state=None):
             "project_files": [],
             "messages": [],
             "current_file_index": 0,
-            "test_feedback": ""
+            "test_feedback": "",
+            "retry_count": 0  # <--- DODAJ TO
         }
     
     print(f"🚀 Start: {user_prompt[:30]}...")
+    
     
     try:
         result = app.invoke(initial_state, {"recursion_limit": 150})

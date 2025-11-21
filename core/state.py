@@ -3,12 +3,16 @@ from langchain_core.messages import BaseMessage
 import operator
 
 class AgentState(TypedDict):
-    requirements: str           # Co użytkownik chce
-    plan: List[str]             # Plan PM-a
+    requirements: str
+    plan: List[str]
+    file_structure: List[Dict[str, Any]] # lub List[str] w trybie awaryjnym
+    project_files: List[Dict[str, str]]
     
-    file_structure: List[str]   # Lista plików do zrobienia (np. ["main.py", "game.py"])
-    current_file_index: int     # NOWOŚĆ: Który plik teraz robimy (0, 1, 2...)
+    current_file_index: int
     
-    project_files: List[Dict[str, str]] # Gotowy kod: [{"name": "main.py", "content": "..."}]
+    # --- NOWE POLE: LICZNIK POPRAWEK ---
+    retry_count: int
+    # -----------------------------------
     
-    messages: Annotated[List[BaseMessage], operator.add] # Historia czatu
+    test_feedback: str
+    messages: Annotated[List[BaseMessage], operator.add]
