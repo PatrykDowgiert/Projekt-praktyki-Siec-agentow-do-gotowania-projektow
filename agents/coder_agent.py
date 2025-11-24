@@ -14,15 +14,42 @@ def detect_language(filename):
     return mapping.get(ext, "Programming")
 
 def extract_content(text, file_extension):
-    # Szukamy dowolnego bloku kodu
-    pattern = r"```[\w\+]*\s*(.*?)\s*```"
-    match = re.search(pattern, text, re.DOTALL)
-    if match: return match.group(1).strip()
-    
-    # Fallback: czyszczenie tekstu
+    """
+    Wyciąga treść w zależności od typu pliku.
+    Naprawia problem ucinania README.
+    """
+    # Usuwamy typowe "gadanie" modelu na początku (np. "Here is the code:")
     lines = text.split('\n')
-    clean = [l for l in lines if not l.lower().strip().startswith(("here", "sure", "okay", "below", "code"))]
-    return "\n".join(clean).strip()
+    # Usuwamy pierwsze linie, jeśli to tylko gadanie
+    if lines and lines[0].lower().strip().startswith(("here", "sure", "okay", "certainly", "below")):
+        text = "\n".join(lines[1:]).strip()
+
+    # --- LOGIKA DLA DOKUMENTACJI (.md, .txt) ---
+    if file_extension in [".md", ".txt"]:
+        # Jeśli model zamknął CAŁOŚĆ w ```markdown ... ```, zdejmujemy to.
+        # Ale uważamy, żeby nie zdjąć wewnętrznych bloków kodu!
+        
+        # Sprawdzamy, czy cały tekst jest w jednej wielkiej ramce
+        match_wrapper = re.match(r"^```markdown\s*(.*?)\s*```$", text, re.DOTALL)
+        if match_wrapper:
+            return match_wrapper.group(1).strip()
+            
+        match_gen = re.match(r"^```\s*(.*?)\s*```$", text, re.DOTALL)
+        if match_gen:
+            return match_gen.group(1).strip()
+            
+        # Jeśli nie ma głównej ramki, zwracamy CAŁY tekst (bo w Markdown tekst jest wymieszany z kodem)
+        return text.strip()
+
+    # --- LOGIKA DLA KODU (.py, .js, itp.) ---
+    else:
+        # Tutaj chcemy być restrykcyjni - bierzemy tylko to co w ramkach
+        pattern = r"```[\w\+]*\s*(.*?)\s*```"
+        match = re.search(pattern, text, re.DOTALL)
+        if match: return match.group(1).strip()
+        
+        # Fallback
+        return text.strip()
 
 def coder_node(state: AgentState):
     file_structure = state.get("file_structure", [])
@@ -45,7 +72,6 @@ def coder_node(state: AgentState):
         current_filename = str(task)
         context_needed = []
         
-    # Wykrywanie
     language = detect_language(current_filename)
     is_docs = current_filename.lower().endswith((".md", ".txt"))
     
@@ -54,6 +80,7 @@ def coder_node(state: AgentState):
     for needed_file in context_needed:
         found = next((f for f in existing_files_data if f and f.get("name") == needed_file), None)
         if found:
+            # Dla README dajemy kod, żeby wiedział o czym pisać
             smart_context += f"\n# --- PLIK: {needed_file} ---\n{found.get('content', '')}\n"
     
     old_file_content = None
@@ -69,40 +96,39 @@ def coder_node(state: AgentState):
     requirements = state.get("requirements", "")
     
     if is_docs:
-        # --- PROMPT DLA DOKUMENTACJI (NAPRAWIONY) ---
-        # Ten prompt wymusza analizę kodu i zakazuje halucynacji
-        system_prompt = """Jesteś Technical Writerem. Twoim zadaniem jest napisać README.md dla tego konkretnego projektu.
+        # PROMPT DLA DOKUMENTACJI
+        system_prompt = """Jesteś Technical Writerem. Twoim zadaniem jest napisać README.md.
         
-        ZASADY KRYTYCZNE (PRZESTRZEGAJ ICH!):
-        1. ANALIZA: Przeczytaj uważnie kod z sekcji 'Kontekst projektu'. Opisz TO co tam widzisz.
-        2. ZAKAZ HALUCYNACJI: Nie pisz o React, Flask, API czy bazie danych, jeśli nie ma ich w kodzie! Jeśli to gra w węża, pisz o wężu.
-        3. STRUKTURA: 
-           - Tytuł i realny opis
-           - Instrukcja instalacji (np. pip install pygame)
-           - Instrukcja uruchomienia (np. python main.py)
-        4. JĘZYK: Polski.
+        ZASADY:
+        1. Przeanalizuj kod w 'Kontekście' i opisz ten konkretny projekt.
+        2. Struktura: Tytuł, Opis Funkcjonalności, Technologie, Instalacja, Uruchomienie.
+        3. Używaj Markdown (nagłówki #, listy -, pogrubienia **).
+        4. NIE wklejaj całych plików źródłowych.
+        5. Pisz w języku polskim.
         """
-        user_msg = f"Napisz treść pliku: {current_filename}\n\nKontekst projektu (KOD ŹRÓDŁOWY):\n{smart_context}"
+        user_msg = f"Napisz treść pliku: {current_filename}\n\nKOD PROJEKTU:\n{smart_context}"
         
     else:
-        # --- PROMPT DLA KODU ---
+        # PROMPT DLA KODU
         system_prompt = f"""Jesteś Ekspertem w języku {language}.
         {'Edytujesz' if mode=='EDYCJA' else 'Tworzysz'} plik '{current_filename}'.
         
         ZASADY:
-        1. Pisz kod zgodnie z najlepszymi praktykami dla języka {language}.
+        1. Pisz kod zgodnie z najlepszymi praktykami.
         2. Zwróć TYLKO kod wewnątrz bloku markdown (np. ```{language.lower()} ... ```).
-        3. Uważaj na typy zmiennych (np. nie dodawaj krotki do obiektu, jeśli klasa tego nie obsługuje).
         """
         
-        user_msg = f"Wymagania: {requirements}\n\nZALEŻNOŚCI (Inne pliki):\n{smart_context}"
+        user_msg = f"Wymagania: {requirements}\n\nZALEŻNOŚCI:\n{smart_context}"
         if mode == "EDYCJA": 
             user_msg += f"\nSTARY KOD:\n{old_file_content}"
 
     try:
         resp = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_msg)])
         extension = "." + current_filename.split(".")[-1] if "." in current_filename else ".txt"
+        
+        # Wywołujemy nową, naprawioną funkcję ekstrakcji
         clean_content = extract_content(resp.content, extension)
+        
     except Exception as e:
         print(f"Błąd LLM: {e}")
         clean_content = "# Error generating content"
