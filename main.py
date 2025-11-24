@@ -40,10 +40,14 @@ def route_after_qa(state: AgentState):
     structure = state.get("file_structure", [])
     idx = state.get("current_file_index", 0)
     
+    # Jeśli QA zgłasza błąd -> wracamy do developera
     if "FAILED" in feedback:
         return "developer"
     
-    if structure is None: return "end"
+    # Zabezpieczenie przed brakiem struktury
+    if not structure: 
+        return "end"
+        
     if idx < len(structure):
         return "developer"
     else:
@@ -52,7 +56,7 @@ def route_after_qa(state: AgentState):
 # --- SILNIK Z PASEKIEM PROGRESU ---
 def run_project_agent(user_prompt, previous_state=None, progress_bar=None, status_text=None):
     """
-    Główna funkcja, teraz obsługuje strumieniowanie (stream) dla paska postępu.
+    Główna funkcja z obsługą paska postępu (zabezpieczona przed błędami UI).
     """
     workflow = StateGraph(AgentState)
     workflow.add_node("product_manager", pm_node)
@@ -97,19 +101,12 @@ def run_project_agent(user_prompt, previous_state=None, progress_bar=None, statu
     final_state = initial_state
 
     try:
-        # UŻYWAMY .stream() ZAMIAST .invoke()
-        # To pozwala nam reagować na każdy krok agenta
-        step_count = 0
-        
         for event in app.stream(initial_state, {"recursion_limit": 150}):
-            # event to słownik np. {'product_manager': {stan...}}
-            
-            # Pobieramy nazwę węzła i nowy stan
             node_name = list(event.keys())[0]
             state = event[node_name]
-            final_state = state # Aktualizujemy stan końcowy
+            final_state = state 
             
-            # --- AKTUALIZACJA UI (PASEK POSTĘPU) ---
+            # --- AKTUALIZACJA UI (ZABEZPIECZONA) ---
             if progress_bar and status_text:
                 
                 if node_name == "product_manager":
@@ -120,31 +117,41 @@ def run_project_agent(user_prompt, previous_state=None, progress_bar=None, statu
                     progress_bar.progress(20, f"👷 Architekt: Zaplanowano {files_count} plików.")
                     
                 elif node_name == "developer":
-                    # Obliczamy postęp na podstawie liczby plików
                     files = state.get("file_structure", [])
                     idx = state.get("current_file_index", 0)
+                    
+                    # Zabezpieczenie przed pustą listą
                     total = len(files) if files else 1
                     
-                    # Programista pracuje od 20% do 90% paska
-                    # np. 2/4 pliki -> 50% pracy dev -> 20 + (0.5 * 70) = 55% ogółu
                     percent = 20 + int((idx / total) * 70)
-                    percent = min(percent, 90) # Nie przekraczamy 90% przed końcem
+                    percent = min(percent, 90)
                     
-                    filename = files[idx-1]["filename"] if idx > 0 and isinstance(files[idx-1], dict) else "plik"
-                    progress_bar.progress(percent, f"👨‍💻 Programista: Utworzono {filename} ({idx}/{total})")
+                    # --- TU BYŁ BŁĄD -> TERAZ JEST BEZPIECZNIE ---
+                    current_filename = "plik"
+                    # Sprawdzamy czy lista istnieje, czy indeks jest > 0 I czy mieści się w zakresie
+                    if files and idx > 0 and (idx - 1) < len(files):
+                        try:
+                            item = files[idx-1]
+                            if isinstance(item, dict):
+                                current_filename = item.get("filename", "plik")
+                            elif isinstance(item, str):
+                                current_filename = item
+                        except:
+                            current_filename = "nieznany plik"
+                    # -----------------------------------------------
+
+                    progress_bar.progress(percent, f"👨‍💻 Programista: Utworzono {current_filename} ({idx}/{total})")
                     
                 elif node_name == "qa":
                     feedback = state.get("test_feedback", "OK")
                     if "FAILED" in feedback:
-                        status_text.warning(f"🐞 QA: Znaleziono błąd. Poprawiamy...")
+                        status_text.warning(f"🐞 QA: Wykryto błąd. Poprawiamy...")
                     else:
                         status_text.success("🐞 QA: Kod zatwierdzony.")
 
-        # Koniec pętli = 100%
         if progress_bar:
             progress_bar.progress(100, "✅ Gotowe! Projekt wygenerowany.")
             
-        # Filtrowanie wyników
         clean_files = [f for f in final_state.get("project_files", []) if f is not None]
         final_state["project_files"] = clean_files
         return final_state
