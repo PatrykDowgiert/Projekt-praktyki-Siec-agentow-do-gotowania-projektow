@@ -27,16 +27,16 @@ def detect_language(filename):
         "bat": "Batch Script",
         "json": "JSON",
         "xml": "XML",
-        "yaml": "YAML"
+        "yaml": "YAML",
+        "md": "Markdown"
     }
     
-    return mapping.get(ext, "Programming") # Domyślnie ogólny programista
+    return mapping.get(ext, "Programming")
 
 def extract_content(text, file_extension):
     """
     Wyciąga treść z ramek markdown w zależności od typu pliku.
     """
-    # Znajdźmy tag języka w markdown (np. ```javascript)
     # Szukamy dowolnego bloku kodu
     pattern = r"```[\w\+]*\s*(.*?)\s*```"
     match = re.search(pattern, text, re.DOTALL)
@@ -52,6 +52,7 @@ def coder_node(state: AgentState):
     idx = state.get("current_file_index", 0)
     existing_files_data = state.get("project_files", [])
     
+    # Zabezpieczenie przed None
     if existing_files_data is None: existing_files_data = []
     existing_files_data = [f for f in existing_files_data if f is not None]
     
@@ -87,7 +88,6 @@ def coder_node(state: AgentState):
             
     mode = "EDYCJA" if old_file_content else "TWORZENIE"
     
-    # Informacja w logach
     print(f"\n👨‍💻 [Coder]: {mode} pliku: {current_filename} (Język: {language})")
     
     llm = get_llm(model_role="coder")
@@ -96,15 +96,26 @@ def coder_node(state: AgentState):
     # --- DYNAMICZNY PROMPT ---
     
     if is_docs:
-        # Prompt dla dokumentacji (bez zmian)
-        system_prompt = """Jesteś Technical Writerem.
-        Twoim zadaniem jest napisać profesjonalną dokumentację projektu.
-        Używaj formatowania Markdown. NIE PISZ KODU PROGRAMU, TYLKO OPISY.
+        # --- PROMPT DLA DOKUMENTACJI (README.md) - WERSJA PRO ---
+        system_prompt = """Jesteś Ekspertem Technical Writerem.
+        Twoim zadaniem jest stworzyć profesjonalne, atrakcyjne README.md w stylu GitHub.
+        
+        WYMAGANA STRUKTURA:
+        1. 🏆 Tytuł Projektu (Nagłówek H1) + Krótki, chwytliwy opis (co to robi?).
+        2. 🚀 Główne Funkcjonalności (Lista wypunktowana, użyj emoji np. ✅).
+        3. 🛠️ Technologie (Wymień użyte języki i biblioteki).
+        4. ⚙️ Instalacja (Blok kodu z komendami, np. `pip install ...`).
+        5. ▶️ Jak uruchomić (Dokładna komenda, np. `python main.py`).
+        
+        ZASADY KRYTYCZNE:
+        - NIE WKLEJAJ CAŁEGO KODU ŹRÓDŁOWEGO PROJEKTU.
+        - Skup się na użytkowniku końcowym (jak ma tego używać).
+        - Formatuj tekst używając Markdown (pogrubienia, tabele jeśli trzeba).
         """
-        user_msg = f"Napisz treść pliku: {current_filename}\n\nKontekst projektu:\n{smart_context}"
+        user_msg = f"Napisz treść pliku: {current_filename}\n\nAnaliza kodu projektu:\n{smart_context}"
         
     else:
-        # Prompt dla Programisty (ZMIENIONY)
+        # --- PROMPT DLA KODU ---
         system_prompt = f"""Jesteś Ekspertem w języku {language}.
         {'Edytujesz' if mode=='EDYCJA' else 'Tworzysz'} plik '{current_filename}'.
         
