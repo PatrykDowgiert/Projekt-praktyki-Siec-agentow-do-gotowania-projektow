@@ -1,11 +1,9 @@
-import json
-import re
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from config_factory import get_llm
 
 def architect_node(state: AgentState):
-    print("\n👷 [Architekt]: Analizuję zależności (BULLETPROOF MODE)...")
+    print("\n👷 [Architekt]: Planuję strukturę (Tryb Tekstowy)...")
     
     requirements = state.get("requirements", "")
     plan = state.get("plan", [])
@@ -15,14 +13,24 @@ def architect_node(state: AgentState):
     
     llm = get_llm(model_role="coder")
     
-    system_prompt = f"""Jesteś Architektem.
-    ZADANIE: Zaprojektuj strukturę plików.
-    Istniejące pliki: {existing_names}
+    # PROMPT: Prosimy o prostą listę, a nie JSON
+    system_prompt = f"""Jesteś Głównym Architektem.
     
-    Zwróć CZYSTY JSON w formacie:
-    [
-      {{ "filename": "main.py", "context_needed": [] }}
-    ]
+    TWOJE ZADANIE:
+    Wypisz listę plików niezbędnych do działania projektu.
+    
+    ISTNIEJĄCE PLIKI: {existing_names}
+    
+    ZASADY:
+    1. Wypisz TYLKO nazwy plików.
+    2. Każdy plik w nowej linii.
+    3. NIE używaj punktorów, numeracji ani JSONa.
+    4. NIE dodawaj opisów.
+    
+    Przykład:
+    main.py
+    utils.py
+    requirements.txt
     """
     
     messages = [
@@ -32,42 +40,51 @@ def architect_node(state: AgentState):
     
     try:
         response = llm.invoke(messages)
-        content = response.content
+        content = response.content.strip()
     except Exception as e:
         print(f"⚠️ [Architekt]: Błąd LLM: {e}")
-        content = ""
+        content = "main.py"
 
-    # --- LOGIKA AWARYJNA (FALLBACK) ---
-    structure_json = []
+    # --- PARSOWANIE (Zamiana tekstu na strukturę) ---
+    file_list = []
     
-    # 1. Próba Regex
-    match = re.search(r"\[.*\]", content, re.DOTALL)
-    if match:
-        try:
-            structure_json = json.loads(match.group(0))
-        except:
-            pass
-
-    # 2. Jeśli pusto -> Spadochron (Hardcoded Fallback)
-    if not structure_json or not isinstance(structure_json, list):
-        print("⚠️ [Architekt]: Nie udało się sparsować JSON. Włączam tryb awaryjny.")
-        # Tworzymy chociaż jeden plik, żeby proces poszedł dalej
-        structure_json = [{"filename": "main.py", "context_needed": []}]
-
-    # 3. FILTROWANIE NULLI (To naprawia Twój błąd!)
-    # Usuwamy z listy wszystko, co nie jest słownikiem
-    safe_structure = []
-    for item in structure_json:
-        if isinstance(item, dict) and "filename" in item:
-            safe_structure.append(item)
-        elif isinstance(item, str):
-            # Naprawiamy, jeśli model zwrócił listę stringów zamiast obiektów
-            safe_structure.append({"filename": item, "context_needed": []})
+    # Dzielimy po liniach
+    lines = content.split('\n')
+    
+    for line in lines:
+        clean_line = line.strip()
+        # Usuwamy ewentualne punktory, jeśli model nie posłuchał (np. "- main.py")
+        clean_line = clean_line.lstrip("-*1234567890. ").strip()
+        
+        # Ignorujemy puste linie i te bez kropki (rozszerzenia)
+        if not clean_line or "." not in clean_line:
+            continue
             
-    print(f"👷 [Architekt]: Zaplanowano {len(safe_structure)} plików.")
+        # Ignorujemy linie typu "Here are the files:"
+        if " " in clean_line and not clean_line.endswith(".py"): # Pliki rzadko mają spacje
+            continue
+            
+        file_list.append(clean_line)
+        
+    # Zabezpieczenie: Jeśli lista pusta, dodajemy domyślne pliki
+    if not file_list:
+        print("⚠️ [Architekt]: Model nie zwrócił plików. Daję domyślne.")
+        file_list = ["main.py", "README.md"]
+
+    # --- KONWERSJA NA STRUKTURĘ DLA CODERA ---
+    # Zamieniamy ['main.py'] na [{'filename': 'main.py', 'context_needed': []}]
+    # W tym trybie uproszczonym kontekst będzie budowany dynamicznie przez wszystkich
+    structure_json = []
+    for f in file_list:
+        structure_json.append({
+            "filename": f,
+            "context_needed": [] # Coder sam dobierze, lub damy mu wszystko co mamy
+        })
+
+    print(f"👷 [Architekt]: Zaplanowano {len(structure_json)} plików: {file_list}")
 
     return {
-        "file_structure": safe_structure,
+        "file_structure": structure_json,
         "current_file_index": 0, 
         "messages": [response] if 'response' in locals() else []
     }
