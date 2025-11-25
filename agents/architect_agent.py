@@ -5,84 +5,59 @@ import json
 import re
 
 def extract_json(text):
-    """Próbuje wyciągnąć JSON z tekstu."""
     match = re.search(r"\[.*\]", text, re.DOTALL)
-    if match:
-        return json.loads(match.group(0))
+    if match: return json.loads(match.group(0))
     return None
 
 def architect_node(state: AgentState):
-    print("\n👷 [Architekt]: Planuję strukturę (Tryb Uniwersalny)...")
+    print("\n👷 [Architekt]: Planuję strukturę (Tryb Precyzyjny)...")
     
     requirements = state.get("requirements", "")
     existing_files = state.get("project_files", [])
     existing_names = [f['name'] for f in existing_files]
     
-    llm = get_llm(model_role="coder") # Coder zna frameworki najlepiej
+    llm = get_llm(model_role="coder")
     
-    # PROMPT UNIWERSALNY - ZMUSZA DO MYŚLENIA O KONKRETNYM FRAMEWORKU
-    system_prompt = f"""Jesteś Głównym Architektem Oprogramowania (Senior Solutions Architect).
+    system_prompt = f"""Jesteś Głównym Architektem Oprogramowania.
     
-    ZADANIE:
-    Stwórz strukturę plików dla projektu na podstawie wymagań.
+    ZADANIE: Zaprojektuj strukturę plików dla projektu.
     
-    ZASADY KRYTYCZNE:
-    1. ROZPOZNAJ TECHNOLOGIĘ:
-       - Jeśli user chce **Django** -> zaplanuj `manage.py`, folder aplikacji, `settings.py`.
-       - Jeśli user chce **.NET/C#** -> zaplanuj `Program.cs`, `Startup.cs`, plik `.csproj`.
-       - Jeśli user chce **Angular/React** -> zaplanuj `package.json`, `index.html`, `src/App.js` itp.
-       - Jeśli user chce **Python Script** -> zaplanuj `main.py`, `utils.py`.
-    
-    2. PODZIAŁ MODUŁOWY:
-       - Nie wrzucaj wszystkiego do jednego pliku (chyba że to prosty skrypt).
-       - Każdy plik musi mieć krótki opis `description` (co ma zawierać).
-       
-    3. FORMAT WYJŚCIOWY (JSON):
-       [
-         {{ "filename": "sciezka/do/pliku", "description": "Opis odpowiedzialności pliku" }},
-         {{ "filename": "requirements.txt", "description": "Zależności" }}
-       ]
-    
-    4. Zawsze dodaj `README.md`.
+    ZASADY:
+    1. Zwróć JSON: [{{ "filename": "...", "description": "..." }}]
+    2. W 'description' bądź TECHNICZNYM EKSPERTEM. Nie pisz "logika gry", pisz:
+       - "Klasa Snake: lista segmentów, ruch automatyczny co tick zegara, obsługa kolizji."
+       - "Main: pętla while, zegar FPS, obsługa klawiszy zmieniających wektor ruchu."
+    3. Zawsze dodaj 'requirements.txt' i 'README.md'.
     
     Istniejące pliki: {existing_names}
     """
     
     messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Wymagania projektu: {requirements}")
+        HumanMessage(content=f"Wymagania: {requirements}")
     ]
     
     structure = []
-    
     try:
         response = llm.invoke(messages)
         structure = extract_json(response.content)
-            
-    except Exception as e:
-        print(f"⚠️ [Architekt]: Błąd parsowania JSON: {e}")
+    except: pass
     
-    # --- GENERYCZNY FALLBACK (Zamiast Snake'a!) ---
     if not structure:
-        print("⚠️ [Architekt]: Włączam tryb awaryjny (Generyczny).")
-        # Jeśli nie udało się sparsować JSONa, próbujemy wyciągnąć chociaż nazwy plików z tekstu
-        # lub dajemy absolutne minimum.
+        # Fallback z lepszymi opisami
         structure = [
-            {"filename": "main.py", "description": "Główny punkt wejścia programu."},
-            {"filename": "utils.py", "description": "Funkcje pomocnicze."},
-            {"filename": "README.md", "description": "Dokumentacja projektu."}
+            {"filename": "settings.py", "description": "Stałe: kolory, wymiary, FPS."},
+            {"filename": "game.py", "description": "Logika biznesowa. Klasy i metody, bez pętli głównej."},
+            {"filename": "main.py", "description": "Punkt wejścia. Importuje game.py. Zawiera pętlę aplikacji."},
+            {"filename": "requirements.txt", "description": "Tylko zewnętrzne biblioteki (np. pygame). Bez standardowych."},
+            {"filename": "README.md", "description": "Dokumentacja dla użytkownika końcowego."}
         ]
 
-    # Budowanie finalnej struktury
     final_structure = []
     for item in structure:
-        # Zabezpieczenie przed brakującymi kluczami
-        fname = item.get("filename", "unknown.txt")
-        desc = item.get("description", "Implementacja kodu")
-        
         final_structure.append({
-            "filename": fname,
-            "description": desc,
+            "filename": item.get("filename", "file"),
+            "description": item.get("description", "Implementacja"),
             "context_needed": [] 
         })
 
