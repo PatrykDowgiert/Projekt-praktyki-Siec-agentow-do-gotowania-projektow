@@ -1,90 +1,95 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from config_factory import get_llm
+import json
+import re
+
+def extract_json(text):
+    """Próbuje wyciągnąć JSON z tekstu."""
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if match:
+        return json.loads(match.group(0))
+    return None
 
 def architect_node(state: AgentState):
-    print("\n👷 [Architekt]: Planuję strukturę (Tryb Tekstowy)...")
+    print("\n👷 [Architekt]: Planuję strukturę (Tryb Uniwersalny)...")
     
     requirements = state.get("requirements", "")
-    plan = state.get("plan", [])
-    plan_str = plan[-1] if plan else ""
     existing_files = state.get("project_files", [])
     existing_names = [f['name'] for f in existing_files]
     
-    llm = get_llm(model_role="coder")
+    llm = get_llm(model_role="coder") # Coder zna frameworki najlepiej
     
-    # PROMPT: Prosimy o prostą listę, a nie JSON
-    system_prompt = f"""Jesteś Głównym Architektem.
+    # PROMPT UNIWERSALNY - ZMUSZA DO MYŚLENIA O KONKRETNYM FRAMEWORKU
+    system_prompt = f"""Jesteś Głównym Architektem Oprogramowania (Senior Solutions Architect).
     
-    TWOJE ZADANIE:
-    Wypisz listę plików niezbędnych do działania projektu.
+    ZADANIE:
+    Stwórz strukturę plików dla projektu na podstawie wymagań.
     
-    ISTNIEJĄCE PLIKI: {existing_names}
+    ZASADY KRYTYCZNE:
+    1. ROZPOZNAJ TECHNOLOGIĘ:
+       - Jeśli user chce **Django** -> zaplanuj `manage.py`, folder aplikacji, `settings.py`.
+       - Jeśli user chce **.NET/C#** -> zaplanuj `Program.cs`, `Startup.cs`, plik `.csproj`.
+       - Jeśli user chce **Angular/React** -> zaplanuj `package.json`, `index.html`, `src/App.js` itp.
+       - Jeśli user chce **Python Script** -> zaplanuj `main.py`, `utils.py`.
     
-    ZASADY:
-    1. Wypisz TYLKO nazwy plików.
-    2. Każdy plik w nowej linii.
-    3. NIE używaj punktorów, numeracji ani JSONa.
-    4. NIE dodawaj opisów.
+    2. PODZIAŁ MODUŁOWY:
+       - Nie wrzucaj wszystkiego do jednego pliku (chyba że to prosty skrypt).
+       - Każdy plik musi mieć krótki opis `description` (co ma zawierać).
+       
+    3. FORMAT WYJŚCIOWY (JSON):
+       [
+         {{ "filename": "sciezka/do/pliku", "description": "Opis odpowiedzialności pliku" }},
+         {{ "filename": "requirements.txt", "description": "Zależności" }}
+       ]
     
-    Przykład:
-    main.py
-    utils.py
-    requirements.txt
+    4. Zawsze dodaj `README.md`.
+    
+    Istniejące pliki: {existing_names}
     """
     
     messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Wymagania: {requirements}\nPlan: {plan_str}")
+        HumanMessage(content=f"Wymagania projektu: {requirements}")
     ]
+    
+    structure = []
     
     try:
         response = llm.invoke(messages)
-        content = response.content.strip()
+        structure = extract_json(response.content)
+            
     except Exception as e:
-        print(f"⚠️ [Architekt]: Błąd LLM: {e}")
-        content = "main.py"
-
-    # --- PARSOWANIE (Zamiana tekstu na strukturę) ---
-    file_list = []
+        print(f"⚠️ [Architekt]: Błąd parsowania JSON: {e}")
     
-    # Dzielimy po liniach
-    lines = content.split('\n')
-    
-    for line in lines:
-        clean_line = line.strip()
-        # Usuwamy ewentualne punktory, jeśli model nie posłuchał (np. "- main.py")
-        clean_line = clean_line.lstrip("-*1234567890. ").strip()
-        
-        # Ignorujemy puste linie i te bez kropki (rozszerzenia)
-        if not clean_line or "." not in clean_line:
-            continue
-            
-        # Ignorujemy linie typu "Here are the files:"
-        if " " in clean_line and not clean_line.endswith(".py"): # Pliki rzadko mają spacje
-            continue
-            
-        file_list.append(clean_line)
-        
-    # Zabezpieczenie: Jeśli lista pusta, dodajemy domyślne pliki
-    if not file_list:
-        print("⚠️ [Architekt]: Model nie zwrócił plików. Daję domyślne.")
-        file_list = ["main.py", "README.md"]
+    # --- GENERYCZNY FALLBACK (Zamiast Snake'a!) ---
+    if not structure:
+        print("⚠️ [Architekt]: Włączam tryb awaryjny (Generyczny).")
+        # Jeśli nie udało się sparsować JSONa, próbujemy wyciągnąć chociaż nazwy plików z tekstu
+        # lub dajemy absolutne minimum.
+        structure = [
+            {"filename": "main.py", "description": "Główny punkt wejścia programu."},
+            {"filename": "utils.py", "description": "Funkcje pomocnicze."},
+            {"filename": "README.md", "description": "Dokumentacja projektu."}
+        ]
 
-    # --- KONWERSJA NA STRUKTURĘ DLA CODERA ---
-    # Zamieniamy ['main.py'] na [{'filename': 'main.py', 'context_needed': []}]
-    # W tym trybie uproszczonym kontekst będzie budowany dynamicznie przez wszystkich
-    structure_json = []
-    for f in file_list:
-        structure_json.append({
-            "filename": f,
-            "context_needed": [] # Coder sam dobierze, lub damy mu wszystko co mamy
+    # Budowanie finalnej struktury
+    final_structure = []
+    for item in structure:
+        # Zabezpieczenie przed brakującymi kluczami
+        fname = item.get("filename", "unknown.txt")
+        desc = item.get("description", "Implementacja kodu")
+        
+        final_structure.append({
+            "filename": fname,
+            "description": desc,
+            "context_needed": [] 
         })
 
-    print(f"👷 [Architekt]: Zaplanowano {len(structure_json)} plików: {file_list}")
+    print(f"👷 [Architekt]: Zaplanowano: {[f['filename'] for f in final_structure]}")
 
     return {
-        "file_structure": structure_json,
+        "file_structure": final_structure,
         "current_file_index": 0, 
         "messages": [response] if 'response' in locals() else []
     }
