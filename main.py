@@ -9,45 +9,32 @@ from agents.coder_agent import coder_node
 from agents.qa_agent import qa_node
 
 def save_files_to_disk(project_name, files):
-    print(f"🔍 DEBUG: Próba zapisu plików dla projektu: {project_name}")
     base_path = os.path.join("workspace", project_name)
     if not os.path.exists(base_path): os.makedirs(base_path)
+    print(f"\n💾 Zapisuję projekt w: {base_path}")
     
-    if not files:
-        print("🔍 DEBUG: Lista plików do zapisu jest PUSTA! ❌")
+    if not files: 
+        print("⚠️ Brak plików do zapisania (lista pusta).")
         return base_path
 
     saved_count = 0
     for file_data in files:
-        # Diagnostyka każdego pliku
-        if file_data is None:
-            print("🔍 DEBUG: Pomijam plik (jest None)")
-            continue
-        if not isinstance(file_data, dict):
-            print(f"🔍 DEBUG: Pomijam plik (zły typ danych: {type(file_data)})")
-            continue
-            
+        if not file_data or not isinstance(file_data, dict): continue
         file_name = file_data.get("name")
         content = file_data.get("content")
         
-        if not file_name:
-            print("🔍 DEBUG: Pomijam plik (brak nazwy)")
-            continue
-        if not content:
-            print(f"🔍 DEBUG: Pomijam plik {file_name} (pusta zawartość)")
-            continue
+        if not file_name or not content: continue
         
         try:
             full_path = os.path.join(base_path, file_name)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            print(f"   -> 💾 Zapisano: {file_name} ({len(content)} znaków)")
             saved_count += 1
         except Exception as e:
             print(f"⚠️ Błąd zapisu {file_name}: {e}")
             
-    print(f"🔍 DEBUG: Łącznie zapisano {saved_count} plików.")
+    print(f"✅ Zapisano łącznie {saved_count} plików.")
     return base_path
 
 def route_after_qa(state: AgentState):
@@ -76,10 +63,10 @@ def run_project_agent(user_prompt, previous_state=None, progress_bar=None, statu
     app = workflow.compile()
     
     if previous_state:
-        initial_state = previous_state
+        initial_state = previous_state.copy() # Kopia dla bezpieczeństwa
         initial_state["requirements"] = user_prompt
         initial_state["test_feedback"] = ""
-        # Czyścimy None
+        # Czyścimy None z listy plików
         if initial_state.get("project_files"):
             initial_state["project_files"] = [f for f in initial_state["project_files"] if f]
     else:
@@ -90,36 +77,29 @@ def run_project_agent(user_prompt, previous_state=None, progress_bar=None, statu
         }
     
     print(f"🚀 Start: {user_prompt[:30]}...")
-    final_state = initial_state
+    
+    # Kopia stanu początkowego
+    final_state = initial_state.copy()
 
     try:
         for event in app.stream(initial_state, {"recursion_limit": 150}):
             node_name = list(event.keys())[0]
             state = event[node_name]
-            final_state = state 
             
-            # --- LOGI DEBUGOWANIA ---
-            if node_name == "architect":
-                struct = state.get("file_structure", [])
-                print(f"🔍 DEBUG [Architekt]: Zaplanował strukturę: {struct}")
-                if not struct: print("🔍 DEBUG [Architekt]: ⚠️ PUSTA STRUKTURA!")
-
-            if node_name == "developer":
-                files = state.get("project_files", [])
-                last_file = files[-1] if files else None
-                if last_file:
-                    print(f"🔍 DEBUG [Developer]: Dodał plik '{last_file.get('name')}' (treść: {len(last_file.get('content', ''))} znaków)")
-                else:
-                    print("🔍 DEBUG [Developer]: ⚠️ Nie dodał żadnego pliku w tym kroku!")
-            # ------------------------
+            # --- KLUCZOWA POPRAWKA ---
+            # Zamiast nadpisywać (final_state = state), AKTUALIZUJEMY słownik.
+            # Dzięki temu, gdy QA zwróci tylko feedback, nie skasuje plików Codera.
+            final_state.update(state)
+            # -------------------------
             
+            # Logika paska postępu
             if progress_bar and status_text:
                 if node_name == "product_manager":
                     progress_bar.progress(10, "🕵️ PM: Analiza zakończona.")
                 elif node_name == "architect":
                     struct = state.get("file_structure", [])
-                    count = len(struct) if struct else 0
-                    progress_bar.progress(20, f"👷 Architekt: {count} plików.")
+                    if not struct: struct = []
+                    progress_bar.progress(20, f"👷 Architekt: {len(struct)} plików.")
                 elif node_name == "developer":
                     files = state.get("file_structure", [])
                     idx = state.get("current_file_index", 0)
@@ -142,18 +122,15 @@ def run_project_agent(user_prompt, previous_state=None, progress_bar=None, statu
 
         if progress_bar: progress_bar.progress(100, "✅ Gotowe!")
         
-        # Filtrowanie i log końcowy
-        raw_files = final_state.get("project_files", [])
-        print(f"🔍 DEBUG [Koniec]: Surowa lista plików ma {len(raw_files)} elementów.")
-        
-        clean_files = [f for f in raw_files if f and f.get("name") and f.get("content")]
-        print(f"🔍 DEBUG [Koniec]: Po przefiltrowaniu zostało {len(clean_files)} poprawnych plików.")
+        # Ostatnie sprawdzenie przed zwrotem
+        clean_files = [f for f in final_state.get("project_files", []) if f]
+        print(f"🔍 DEBUG [Koniec]: W finalnym stanie jest {len(clean_files)} plików.")
         
         final_state["project_files"] = clean_files
         return final_state
         
     except Exception as e:
-        print(f"❌ Błąd w main.py: {e}")
+        print(f"❌ Błąd: {e}")
         traceback.print_exc()
         return final_state
 
