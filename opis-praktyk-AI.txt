@@ -1,0 +1,23 @@
+1. Współpraca z modelem chmurowym (Gemini Pro)
+Gemini Pro pełnił rolę głównego "intelektu" w projekcie. Jego wydajność oceniam wysoko, choć nie obyło się bez ograniczeń typowych dla dużych modeli językowych (LLM).
+✅ Zalety (Mocne strony):
+•	Wysoka jakość generowanego kodu i walor edukacyjny: Model nie tylko generował działające fragmenty kodu, ale również precyzyjnie tłumaczył zastosowane rozwiązania ("dlaczego tak, a nie inaczej"). Działał jak mentor, co przyspieszyło proces uczenia się.
+•	Zarządzanie kontekstem (Large Context Window): Dzięki dużemu oknu kontekstowemu (dużej liczbie tokenów), Gemini był w stanie "pamiętać" kod przesłany znacznie wcześniej. Pozwalało to na skuteczne wyłapywanie błędów w szerszym kontekście projektu, a nie tylko w pojedynczym pliku.
+•	Analiza wymagań (PDF to Code): Model świetnie radził sobie z przetwarzaniem niestrukturalnych danych. Po wgraniu pliku PDF z wymaganiami i zastosowaniu odpowiedniego promptu, potrafił samodzielnie stworzyć harmonogram prac i przeprowadzić mnie krok po kroku przez implementację funkcjonalności.
+•	Adaptacyjność: Nowe funkcjonalności były dodawane w sposób spójny z istniejącą architekturą – model "rozumiał" styl projektu.
+❌ Wady i wyzwania:
+•	Degradacja jakości przy długich sesjach: Zauważyłem zjawisko "gubienia wątku" przy bardzo długich konwersacjach. Model zaczynał się plątać, proponować błędne poprawki do kodu, który wcześniej działał, lub zapętlać się w rozwiązaniach.
+•	Ślepota na stan aplikacji (Runtime vs. Static Code): Model analizuje kod, a nie działającą aplikację. Przykład: problem z panelem administratora wynikający z konfliktu sesji w przeglądarce (zalogowanie jako user w innej karcie). Gemini szukał błędu w logice kodu, proponując skomplikowane zmiany, podczas gdy problem leżał w stanie przeglądarki (wystarczyło wylogowanie/incognito). Wymagało to interwencji ludzkiej intuicji.
+•	Problemy z formatowaniem dokumentacji: Generowanie plików README.md często wymagało ręcznych poprawek. Model miał tendencję do halucynowania (zmyślania) instrukcji instalacji lub błędnego formatowania bloków kodu, co utrudniało bezpośrednie użycie pliku.
+2. Modele Lokalne (Qwen / Llama) – Wyzwania Infrastrukturalne
+Próba wykorzystania modeli lokalnych (Open Source) napotkała bariery sprzętowe, które znacząco wpłynęły na płynność prac w zespole.
+❌ Główne problemy:
+•	Wąskie gardło sprzętowe (Resource Bottleneck): Mimo że same modele (Qwen/Llama) generowały kod poprawnej jakości, brak wystarczających zasobów obliczeniowych (VRAM/RAM) powodował niestabilność. Agenci często przerywali pracę lub wymagali kilkukrotnego ponawiania zadań, by uzyskać kompletny wynik.
+•	Brak środowiska testowego (Deployment Issues): Brak bezpośredniego dostępu do modelu na lokalnym sprzęcie uniemożliwił szybkie testowanie i iterowanie. W zespole 4-osobowym opóźnienia wynikające z konieczności czekania na dostęp do serwera lub walka z konfiguracją znacząco spowolniły postęp prac ("Developer Experience" na niskim poziomie).
+________________________________________
+💡 Wnioski ogólne (Dodane od siebie):
+1.	AI jako Copilot, nie Autopilot: Projekt pokazał, że AI świetnie sprawdza się w generowaniu kodu ("ręce do pracy"), ale rola człowieka jako weryfikatora ("głowa") jest kluczowa. Błędy logiczne (jak ten z sesją) są dla AI niewidoczne, bo wynikają z kontekstu użycia, a nie samej składni.
+2.	Kluczowa rola Prompt Engineeringu: Jakość odpowiedzi (szczególnie przy analizie PDF) zależała bezpośrednio od precyzji moich poleceń.
+3.	Infrastruktura to podstawa: Użycie lokalnych modeli daje prywatność i niezależność, ale bez potężnego hardware'u staje się wąskim gardłem, które frustruje zespół bardziej niż błędy w kodzie.
+________________________________________
+Patryk Dowgiert - Praktykant
